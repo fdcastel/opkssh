@@ -70,12 +70,12 @@ To install manually, download the opkssh binary and run it:
 |🐧 Linux (ARM64/aarch64)    | [github.com/openpubkey/opkssh/releases/latest/download/opkssh-linux-arm64](https://github.com/openpubkey/opkssh/releases/latest/download/opkssh-linux-arm64) |
 |🍎 macOS (x86_64)             | [github.com/openpubkey/opkssh/releases/latest/download/opkssh-osx-amd64](https://github.com/openpubkey/opkssh/releases/latest/download/opkssh-osx-amd64) |
 |🍎 macOS (ARM64/aarch64)             | [github.com/openpubkey/opkssh/releases/latest/download/opkssh-osx-arm64](https://github.com/openpubkey/opkssh/releases/latest/download/opkssh-osx-arm64) |
-| ⊞ Win              | [github.com/openpubkey/opkssh/releases/latest/download/opkssh-windows-amd64.exe](https://github.com/openpubkey/opkssh/releases/latest/download/opkssh-windows-amd64.exe) |
+| ⊞ Win              | [github.com/fdcastel/opkssh/releases/latest/download/opkssh-windows-amd64.exe](https://github.com/fdcastel/opkssh/releases/latest/download/opkssh-windows-amd64.exe) |
 
 To install on Windows run:
 
 ```powershell
-curl https://github.com/openpubkey/opkssh/releases/latest/download/opkssh-windows-amd64.exe -o opkssh.exe
+curl https://github.com/fdcastel/opkssh/releases/latest/download/opkssh-windows-amd64.exe -o opkssh.exe
 ```
 
 To install on macOS run:
