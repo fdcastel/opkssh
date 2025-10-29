@@ -27,6 +27,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
@@ -287,10 +288,10 @@ Arguments:
 			certB64Arg := args[1]
 			typArg := args[2]
 
-			providerPolicyPath := "/etc/opk/providers"
+			providerPolicyPath := filepath.Join(policy.GetSystemConfigBasePath(), "providers")
 			providerPolicy, err := policy.NewProviderFileLoader().LoadProviderPolicy(providerPolicyPath)
 			if err != nil {
-				log.Println("Failed to open /etc/opk/providers:", err)
+				log.Printf("Failed to open %s: %v\n", providerPolicyPath, err)
 				return err
 			}
 
@@ -319,7 +320,8 @@ Arguments:
 			}
 		},
 	}
-	verifyCmd.Flags().StringVar(&serverConfigPathArg, "config-path", "/etc/opk/config.yml", "Path to the server config file. Default: /etc/opk/config.yml.")
+	defaultConfigPath := filepath.Join(policy.GetSystemConfigBasePath(), "config.yml")
+	verifyCmd.Flags().StringVar(&serverConfigPathArg, "config-path", defaultConfigPath, fmt.Sprintf("Path to the server config file. Default: %s", defaultConfigPath))
 	rootCmd.AddCommand(verifyCmd)
 
 	clientCmd := &cobra.Command{
