@@ -28,8 +28,8 @@ import (
 )
 
 // SystemDefaultPolicyPath is the default filepath where opkssh policy is
-// defined
-var SystemDefaultPolicyPath = filepath.FromSlash("/etc/opk/auth_id")
+// defined. On Unix: /etc/opk/auth_id, On Windows: %ProgramData%\opk\auth_id
+var SystemDefaultPolicyPath = filepath.Join(GetSystemConfigBasePath(), "auth_id")
 
 // SystemDefaultProvidersPath is the default filepath where opkssh provider
 // definitions are configured
