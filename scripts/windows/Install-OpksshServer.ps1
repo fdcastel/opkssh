@@ -113,7 +113,7 @@ param(
     [string]$AuthCmdUser = "LocalSystem",
 
     [Parameter(HelpMessage="GitHub repository (owner/repo)")]
-    [string]$GitHubRepo = "openpubkey/opkssh"
+    [string]$GitHubRepo = "fdcastel/opkssh"
 )
 
 #region Helper Functions
