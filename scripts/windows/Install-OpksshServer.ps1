@@ -840,7 +840,7 @@ function Restart-SshdService {
 function Add-OpksshToPath {
     <#
     .SYNOPSIS
-        Adds opkssh installation directory to the system PATH.
+        Adds opkssh installation directory to the system PATH without expanding environment variables.
     #>
     [CmdletBinding(SupportsShouldProcess=$true)]
     param(
@@ -848,20 +848,51 @@ function Add-OpksshToPath {
         [string]$InstallDir
     )
     
-    $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-    
-    if ($currentPath -like "*$InstallDir*") {
-        Write-Verbose "Installation directory already in PATH"
-        return $true
-    }
-    
     if ($PSCmdlet.ShouldProcess("System PATH", "Add $InstallDir")) {
         try {
-            $newPath = "$currentPath;$InstallDir"
-            [Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
-            Write-Log "  Added to system PATH: $InstallDir" -Level Success
-            Write-Warning "You may need to restart your PowerShell session for PATH changes to take effect"
-            return $true
+            # Use Registry to preserve environment variable expansion (e.g., %SystemRoot%)
+            $keyName = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
+            $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($keyName, $true)
+            try {
+                # Get current PATH without expanding environment variables
+                $currentPathFolders = $key.GetValue('Path', '', 'DoNotExpandEnvironmentNames') -split [IO.Path]::PathSeparator
+                
+                # Check if already in PATH (case-insensitive)
+                $normalizedInstallDir = $InstallDir.TrimEnd([IO.Path]::DirectorySeparatorChar)
+                $alreadyInPath = $currentPathFolders | Where-Object {
+                    $_.TrimEnd([IO.Path]::DirectorySeparatorChar) -eq $normalizedInstallDir
+                }
+                
+                if ($alreadyInPath) {
+                    Write-Verbose "Installation directory already in PATH"
+                    return $true
+                }
+                
+                # Add new folder to the current PATH
+                $newPathFolders = $currentPathFolders + @($normalizedInstallDir)
+                
+                # Normalize folders to remove trailing slashes and duplicates
+                $result = [Collections.Generic.HashSet[string]]::new([StringComparer]::InvariantCultureIgnoreCase)
+                $newPathFolders |
+                    ForEach-Object {
+                        $normalized = $_.TrimEnd([IO.Path]::DirectorySeparatorChar).Trim()
+                        if ($normalized -ne '') {
+                            $result.Add($normalized) > $null
+                        }
+                    }
+                
+                # Build new PATH and save it
+                $newPath = $result -join [IO.Path]::PathSeparator
+                $key.SetValue('Path', $newPath, 'ExpandString')
+                
+                Write-Log "  Added to system PATH: $InstallDir" -Level Success
+                Write-Warning "You may need to restart your PowerShell session for PATH changes to take effect"
+                return $true
+            } finally {
+                if ($null -ne $key) {
+                    $key.Dispose()
+                }
+            }
         } catch {
             Write-Warning "Failed to add to PATH: $($_.Exception.Message)"
             Write-Warning "You can manually add '$InstallDir' to your PATH"
@@ -946,7 +977,6 @@ function Install-OpksshServer {
     param()
     
     $ErrorActionPreference = 'Stop'
-    $ErrorView = 'CategoryView'
     
     try {
         Write-Host ""
@@ -1113,4 +1143,4 @@ $($_.ScriptStackTrace)
 #endregion Main Installation Logic
 
 # Execute main installation
-Install-OpksshServer
+    Install-OpksshServer
