@@ -132,10 +132,43 @@ function Remove-OpksshBinary {
         return $true
     }
     
+    # Check if this script is running from the installation directory
+    $scriptPath = $PSCommandPath
+    $scriptInInstallDir = $scriptPath -and (Split-Path $scriptPath -Parent) -eq $installDir
+    
     if ($PSCmdlet.ShouldProcess($installDir, "Remove directory and contents")) {
         try {
-            Remove-Item $installDir -Recurse -Force -ErrorAction Stop
-            Write-UninstallLog "  Removed opkssh binary from $installDir" -Level Success
+            if ($scriptInInstallDir) {
+                # If this script is in the install directory, schedule it for deletion
+                # and remove other files now
+                Write-UninstallLog "  Scheduling uninstall script for deletion after exit" -Level Info
+                
+                # Remove all files except this script
+                Get-ChildItem $installDir -File | Where-Object { $_.FullName -ne $scriptPath } | ForEach-Object {
+                    Remove-Item $_.FullName -Force -ErrorAction Stop
+                }
+                
+                # Create a self-delete batch script
+                $batchScript = @"
+@echo off
+timeout /t 2 /nobreak >nul
+del /f /q "$scriptPath" 2>nul
+rmdir "$installDir" 2>nul
+del /f /q "%~f0" 2>nul
+exit
+"@
+                $batchPath = [System.IO.Path]::GetTempFileName() + ".bat"
+                $batchScript | Out-File -FilePath $batchPath -Encoding ASCII -Force
+                
+                # Schedule the batch script to run
+                Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$batchPath`"" -WindowStyle Hidden
+                
+                Write-UninstallLog "  Removed opkssh binary from $installDir (cleanup pending)" -Level Success
+            } else {
+                # Script is not in the install directory, safe to delete everything
+                Remove-Item $installDir -Recurse -Force -ErrorAction Stop
+                Write-UninstallLog "  Removed opkssh binary from $installDir" -Level Success
+            }
             return $true
         } catch {
             Write-UninstallLog "Failed to remove $installDir`: $($_.Exception.Message)" -Level Error

@@ -63,15 +63,25 @@ jobs:
           $version = "${{ steps.version.outputs.VERSION }}"
           go build -v -ldflags "-s -w -X main.Version=$version" -o opkssh-windows-arm64.exe
       
+      - name: Copy PowerShell scripts
+        shell: pwsh
+        run: |
+          Copy-Item "scripts\windows\Install-OpksshServer.ps1" -Destination "Install-OpksshServer.ps1"
+          Copy-Item "scripts\windows\Uninstall-OpksshServer.ps1" -Destination "Uninstall-OpksshServer.ps1"
+      
       - name: Generate checksums
         shell: pwsh
         run: |
           $amd64Hash = (Get-FileHash opkssh-windows-amd64.exe -Algorithm SHA256).Hash
           $arm64Hash = (Get-FileHash opkssh-windows-arm64.exe -Algorithm SHA256).Hash
+          $installHash = (Get-FileHash Install-OpksshServer.ps1 -Algorithm SHA256).Hash
+          $uninstallHash = (Get-FileHash Uninstall-OpksshServer.ps1 -Algorithm SHA256).Hash
           
           @"
           $amd64Hash  opkssh-windows-amd64.exe
           $arm64Hash  opkssh-windows-arm64.exe
+          $installHash  Install-OpksshServer.ps1
+          $uninstallHash  Uninstall-OpksshServer.ps1
           "@ | Out-File -FilePath checksums.txt -Encoding ASCII
           
           Get-Content checksums.txt
@@ -85,6 +95,8 @@ jobs:
           files: |
             opkssh-windows-amd64.exe
             opkssh-windows-arm64.exe
+            Install-OpksshServer.ps1
+            Uninstall-OpksshServer.ps1
             checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -97,5 +109,7 @@ jobs:
           path: |
             opkssh-windows-amd64.exe
             opkssh-windows-arm64.exe
+            Install-OpksshServer.ps1
+            Uninstall-OpksshServer.ps1
             checksums.txt
           retention-days: 30
