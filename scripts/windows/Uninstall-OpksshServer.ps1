@@ -148,20 +148,18 @@ function Remove-OpksshBinary {
                     Remove-Item $_.FullName -Force -ErrorAction Stop
                 }
                 
-                # Create a self-delete batch script
-                $batchScript = @"
-@echo off
-timeout /t 2 /nobreak >nul
-del /f /q "$scriptPath" 2>nul
-rmdir "$installDir" 2>nul
-del /f /q "%~f0" 2>nul
-exit
+                # Create a self-delete PowerShell script
+                $cleanupScript = @"
+Start-Sleep -Seconds 2
+Remove-Item -Path '$scriptPath' -Force -ErrorAction SilentlyContinue
+Remove-Item -Path '$installDir' -Force -ErrorAction SilentlyContinue
+Remove-Item -Path `$PSCommandPath -Force -ErrorAction SilentlyContinue
 "@
-                $batchPath = [System.IO.Path]::GetTempFileName() + ".bat"
-                $batchScript | Out-File -FilePath $batchPath -Encoding ASCII -Force
+                $cleanupPath = [System.IO.Path]::GetTempFileName() + ".ps1"
+                $cleanupScript | Out-File -FilePath $cleanupPath -Encoding UTF8 -Force
                 
-                # Schedule the batch script to run
-                Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$batchPath`"" -WindowStyle Hidden
+                # Schedule the cleanup script to run in a new PowerShell process
+                Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", "`"$cleanupPath`"" -WindowStyle Hidden
                 
                 Write-UninstallLog "  Removed opkssh binary from $installDir (cleanup pending)" -Level Success
             } else {
