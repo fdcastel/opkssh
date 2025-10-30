@@ -38,8 +38,9 @@
     Default is "C:\ProgramData\opk".
 
 .PARAMETER AuthCmdUser
-    User account that will be created to run the AuthorizedKeysCommand. 
-    Default is "opksshuser".
+    User account that will run the AuthorizedKeysCommand.
+    Default is "System" (the OpenSSH service account).
+    You can specify "opksshuser" to create a dedicated local user instead.
 
 .PARAMETER GitHubRepo
     GitHub repository to download from (format: owner/repo).
@@ -64,6 +65,11 @@
     .\Install-OpksshServer.ps1 -InstallVersion "v0.10.0" -Verbose
     
     Install a specific version with verbose output.
+
+.EXAMPLE
+    .\Install-OpksshServer.ps1 -AuthCmdUser "opksshuser"
+    
+    Install using a dedicated local user account instead of System.
 
 .NOTES
     Author: OpenPubkey Project
@@ -103,7 +109,8 @@ param(
     [string]$ConfigPath = "C:\ProgramData\opk",
 
     [Parameter(HelpMessage="User account for AuthorizedKeysCommand")]
-    [string]$AuthCmdUser = "opksshuser",
+    [ValidateSet("System", "opksshuser")]
+    [string]$AuthCmdUser = "System",
 
     [Parameter(HelpMessage="GitHub repository (owner/repo)")]
     [string]$GitHubRepo = "fdcastel/opkssh"
@@ -279,6 +286,11 @@ function New-OpksshUser {
         [Parameter(Mandatory=$true)]
         [string]$Username
     )
+    
+    if ($Username -eq "System") {
+        Write-Verbose "Using built-in service account: System"
+        return $true
+    }
     
     Write-Verbose "Checking if user '$Username' exists..."
     $existingUser = Get-LocalUser -Name $Username -ErrorAction SilentlyContinue
@@ -613,15 +625,17 @@ function Set-OpksshPermissions {
             )
             $acl.AddAccessRule($adminRule)
             
-            # Add read permissions for AuthCmdUser
-            $userRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-                $AuthCmdUser,
-                "Read",
-                "ContainerInherit,ObjectInherit",
-                "None",
-                "Allow"
-            )
-            $acl.AddAccessRule($userRule)
+            # Add read permissions for AuthCmdUser (if not a service account)
+            if ($AuthCmdUser -ne "System") {
+                $userRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                    $AuthCmdUser,
+                    "Read",
+                    "ContainerInherit,ObjectInherit",
+                    "None",
+                    "Allow"
+                )
+                $acl.AddAccessRule($userRule)
+            }
             
             Set-Acl $item.FullName $acl
             
@@ -751,10 +765,12 @@ function Set-HomeDirectoryPermissions {
         [string]$AuthCmdUser
     )
     
+    if ($AuthCmdUser -eq "System") {
+        Write-Verbose "Using System - service account has necessary permissions"
+        return $true
+    }
+    
     Write-Log "Configuring home directory permissions for user policy support..."
-    Write-Warning "Home directory policy support on Windows requires careful permission management."
-    Write-Warning "This script will grant read access to existing .opk\auth_id files."
-    Write-Warning "Users must set permissions on their own .opk\auth_id files."
     
     $usersPath = "C:\Users"
     if (-not (Test-Path $usersPath)) {
@@ -1086,11 +1102,6 @@ function Install-OpksshServer {
         Write-Host ""
         Write-Host "  2. Example - Allow alice@gmail.com to SSH as 'Administrator':" -ForegroundColor White
         Write-Host "       & '$binaryPath' add Administrator alice@gmail.com google" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "  3. Configuration files:" -ForegroundColor White
-        Write-Host "       Providers:  $(Join-Path $ConfigPath 'providers')" -ForegroundColor Gray
-        Write-Host "       Auth IDs:   $(Join-Path $ConfigPath 'auth_id')" -ForegroundColor Gray
-        Write-Host "       Config:     $(Join-Path $ConfigPath 'config.yml')" -ForegroundColor Gray
         Write-Host ""
         
         if ($uninstallPath) {
