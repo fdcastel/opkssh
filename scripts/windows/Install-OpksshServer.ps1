@@ -38,9 +38,8 @@
     Default is "C:\ProgramData\opk".
 
 .PARAMETER AuthCmdUser
-    User account that will run the AuthorizedKeysCommand.
-    Default is "LocalSystem" (the OpenSSH service account).
-    You can specify "opksshuser" to create a dedicated local user instead.
+    User account that will be created to run the AuthorizedKeysCommand. 
+    Default is "opksshuser".
 
 .PARAMETER GitHubRepo
     GitHub repository to download from (format: owner/repo).
@@ -65,11 +64,6 @@
     .\Install-OpksshServer.ps1 -InstallVersion "v0.10.0" -Verbose
     
     Install a specific version with verbose output.
-
-.EXAMPLE
-    .\Install-OpksshServer.ps1 -AuthCmdUser "opksshuser"
-    
-    Install using a dedicated local user account instead of LocalSystem.
 
 .NOTES
     Author: OpenPubkey Project
@@ -109,8 +103,7 @@ param(
     [string]$ConfigPath = "C:\ProgramData\opk",
 
     [Parameter(HelpMessage="User account for AuthorizedKeysCommand")]
-    [ValidateSet("LocalSystem", "opksshuser")]
-    [string]$AuthCmdUser = "LocalSystem",
+    [string]$AuthCmdUser = "opksshuser",
 
     [Parameter(HelpMessage="GitHub repository (owner/repo)")]
     [string]$GitHubRepo = "fdcastel/opkssh"
@@ -286,11 +279,6 @@ function New-OpksshUser {
         [Parameter(Mandatory=$true)]
         [string]$Username
     )
-    
-    if ($Username -eq "LocalSystem") {
-        Write-Verbose "Using built-in service account: LocalSystem"
-        return $true
-    }
     
     Write-Verbose "Checking if user '$Username' exists..."
     $existingUser = Get-LocalUser -Name $Username -ErrorAction SilentlyContinue
@@ -572,17 +560,15 @@ function Set-OpksshPermissions {
             )
             $acl.AddAccessRule($adminRule)
             
-            # Add read permissions for AuthCmdUser (if not a service account)
-            if ($AuthCmdUser -ne "LocalSystem" -and $AuthCmdUser -ne "NT AUTHORITY\SYSTEM") {
-                $userRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-                    $AuthCmdUser,
-                    "Read",
-                    "ContainerInherit,ObjectInherit",
-                    "None",
-                    "Allow"
-                )
-                $acl.AddAccessRule($userRule)
-            }
+            # Add read permissions for AuthCmdUser
+            $userRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                $AuthCmdUser,
+                "Read",
+                "ContainerInherit,ObjectInherit",
+                "None",
+                "Allow"
+            )
+            $acl.AddAccessRule($userRule)
             
             Set-Acl $item.FullName $acl
             
@@ -711,11 +697,6 @@ function Set-HomeDirectoryPermissions {
         [Parameter(Mandatory=$true)]
         [string]$AuthCmdUser
     )
-    
-    if ($AuthCmdUser -eq "LocalSystem") {
-        Write-Verbose "Using LocalSystem - service account has necessary permissions"
-        return $true
-    }
     
     Write-Log "Configuring home directory permissions for user policy support..."
     Write-Warning "Home directory policy support on Windows requires careful permission management."
