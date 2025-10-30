@@ -185,6 +185,48 @@ function Test-Prerequisites {
     }
     Write-Verbose "  sshd service found: $($sshdService.Status)"
     
+    # Check OpenSSH version when using System account
+    if ($AuthCmdUser -eq "System") {
+        Write-Verbose "  Validating OpenSSH version for LocalSystem account..."
+        
+        try {
+            $canUseSystemAccount = (Get-Command sshd).Version -ge [version]'8.9'
+        } catch {
+            throw "Unexpected: sshd.exe not in PATH?"
+        }
+        
+        $sshdVersion = (Get-Command sshd).Version
+        Write-Verbose "  Detected OpenSSH Server version: $sshdVersion"
+        
+        if (-not $canUseSystemAccount) {
+            $errorMessage = @"
+
+========================================
+ERROR: OpenSSH Version Too Old
+========================================
+
+Your OpenSSH Server version ($sshdVersion) does not support using 'LocalSystem' 
+as the AuthorizedKeysCommandUser.
+
+OpenSSH Server 8.9.0 or higher is required to use the LocalSystem account.
+
+SOLUTION:
+Run the installer with the -AuthCmdUser parameter:
+
+    .\Install-OpksshServer.ps1 -AuthCmdUser "opksshuser"
+
+This will create and use a dedicated 'opksshuser' account instead.
+
+========================================
+"@
+            throw $errorMessage
+        }
+        
+        Write-Verbose "  OpenSSH version is compatible with LocalSystem account"
+    } else {
+        Write-Verbose "  Using custom user account, no version restriction"
+    }
+    
     # Verify sshd_config exists
     $sshdConfigPath = "C:\ProgramData\ssh\sshd_config"
     if (-not (Test-Path $sshdConfigPath)) {
@@ -904,6 +946,7 @@ function Install-OpksshServer {
     param()
     
     $ErrorActionPreference = 'Stop'
+    $ErrorView = 'CategoryView'
     
     try {
         Write-Host ""
