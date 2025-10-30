@@ -278,27 +278,55 @@ function Remove-OpksshUser {
 function Remove-OpksshFromPath {
     <#
     .SYNOPSIS
-        Removes opkssh installation directory from system PATH.
+        Removes opkssh installation directory from system PATH without expanding environment variables.
     #>
     [CmdletBinding(SupportsShouldProcess=$true)]
     param()
     
     $installDir = "C:\Program Files\opkssh"
-    $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-    
-    if ($currentPath -notlike "*$installDir*") {
-        Write-Verbose "Installation directory not in PATH"
-        return $true
-    }
     
     if ($PSCmdlet.ShouldProcess("System PATH", "Remove $installDir")) {
         try {
-            $pathParts = $currentPath -split ';' | Where-Object { $_ -ne $installDir -and $_ }
-            $newPath = $pathParts -join ';'
-            
-            [Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
-            Write-UninstallLog "  Removed from system PATH" -Level Success
-            return $true
+            # Use Registry to preserve environment variable expansion (e.g., %SystemRoot%)
+            $keyName = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
+            $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($keyName, $true)
+            try {
+                # Get current PATH without expanding environment variables
+                $currentPathFolders = $key.GetValue('Path', '', 'DoNotExpandEnvironmentNames') -split [IO.Path]::PathSeparator
+                
+                # Normalize folder to remove
+                $normalizedInstallDir = $installDir.TrimEnd([IO.Path]::DirectorySeparatorChar)
+                
+                # Check if in PATH
+                $foundInPath = $currentPathFolders | Where-Object {
+                    $_.TrimEnd([IO.Path]::DirectorySeparatorChar) -eq $normalizedInstallDir
+                }
+                
+                if (-not $foundInPath) {
+                    Write-Verbose "Installation directory not in PATH"
+                    return $true
+                }
+                
+                # Filter out the folder to remove (case-insensitive)
+                $result = [Collections.Generic.HashSet[string]]::new([StringComparer]::InvariantCultureIgnoreCase)
+                $currentPathFolders | 
+                    Where-Object { 
+                        $normalizedFolder = $_.TrimEnd([IO.Path]::DirectorySeparatorChar)
+                        $normalizedFolder -ne $normalizedInstallDir
+                    } | 
+                    ForEach-Object { $result.Add($_) > $null }
+                
+                # Build new PATH and save it
+                $newPath = $result -join [IO.Path]::PathSeparator
+                $key.SetValue('Path', $newPath, 'ExpandString')
+                
+                Write-UninstallLog "  Removed from system PATH" -Level Success
+                return $true
+            } finally {
+                if ($null -ne $key) {
+                    $key.Dispose()
+                }
+            }
         } catch {
             Write-UninstallLog "Failed to update PATH: $($_.Exception.Message)" -Level Warning
             return $false
