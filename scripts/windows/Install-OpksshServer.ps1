@@ -10,10 +10,6 @@
     files and directories, and configures the OpenSSH Server to use opkssh for
     authentication via OpenID Connect.
 
-.PARAMETER NoHomePolicy
-    Disables configuration for user home directory policy files (C:\Users\{user}\.opk\auth_id).
-    Simplifies installation. When enabled, users cannot define their own authorization policies.
-
 .PARAMETER NoSshdRestart
     Do not restart the sshd service after installation.
     You must manually restart the service for changes to take effect.
@@ -52,11 +48,6 @@
     Basic installation with default settings.
 
 .EXAMPLE
-    .\Install-OpksshServer.ps1 -NoHomePolicy
-    
-    Install without support for user home directory policies.
-
-.EXAMPLE
     .\Install-OpksshServer.ps1 -InstallFrom "C:\Downloads\opkssh.exe"
     
     Install from a local file instead of downloading.
@@ -81,9 +72,6 @@
 
 [CmdletBinding(SupportsShouldProcess=$true)]
 param(
-    [Parameter(HelpMessage="Disable user home directory policy support")]
-    [switch]$NoHomePolicy,
-
     [Parameter(HelpMessage="Do not restart sshd service after installation")]
     [switch]$NoSshdRestart,
 
@@ -754,71 +742,6 @@ function Set-SshdConfiguration {
     }
 }
 
-function Set-HomeDirectoryPermissions {
-    <#
-    .SYNOPSIS
-        Grants read permissions on user .opk\auth_id files to the AuthCmdUser.
-    #>
-    [CmdletBinding(SupportsShouldProcess=$true)]
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$AuthCmdUser
-    )
-    
-    if ($AuthCmdUser -eq "System") {
-        Write-Verbose "Using System - service account has necessary permissions"
-        return $true
-    }
-    
-    Write-Log "Configuring home directory permissions for user policy support..."
-    
-    $usersPath = "C:\Users"
-    if (-not (Test-Path $usersPath)) {
-        Write-Warning "Users directory not found: $usersPath"
-        return $false
-    }
-    
-    $userDirs = Get-ChildItem $usersPath -Directory -ErrorAction SilentlyContinue
-    $updatedCount = 0
-    
-    foreach ($userDir in $userDirs) {
-        $opkPath = Join-Path $userDir.FullName ".opk"
-        $authIdPath = Join-Path $opkPath "auth_id"
-        
-        if (Test-Path $authIdPath) {
-            if ($PSCmdlet.ShouldProcess($authIdPath, "Grant read access to $AuthCmdUser")) {
-                try {
-                    $acl = Get-Acl $authIdPath
-                    
-                    $readRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-                        $AuthCmdUser,
-                        "Read",
-                        "Allow"
-                    )
-                    
-                    $acl.AddAccessRule($readRule)
-                    Set-Acl $authIdPath $acl
-                    
-                    Write-Verbose "  Updated permissions: $authIdPath"
-                    $updatedCount++
-                } catch {
-                    Write-Warning "  Failed to update permissions for $authIdPath`: $($_.Exception.Message)"
-                }
-            }
-        }
-    }
-    
-    if ($updatedCount -gt 0) {
-        Write-Log "  Updated permissions on $updatedCount auth_id file(s)" -Level Success
-    } else {
-        Write-Verbose "  No existing user auth_id files found"
-    }
-    
-    Write-Warning "Note: Users must ensure their .opk\auth_id files have read permissions for $AuthCmdUser"
-    
-    return $true
-}
-
 function Restart-SshdService {
     <#
     .SYNOPSIS
@@ -949,7 +872,6 @@ Version: $version
 Binary Path: $BinaryPath
 Install Version Parameter: $($InstallParams.InstallVersion)
 Local Install File: $($InstallParams.InstallFrom)
-Home Policy Enabled: $(-not $InstallParams.NoHomePolicy)
 SSH Restarted: $(-not $InstallParams.NoRestart)
 Auth Command User: $($InstallParams.AuthCmdUser)
 Configuration Path: $($InstallParams.ConfigPath)
@@ -1053,16 +975,6 @@ function Install-OpksshServer {
         Write-Host "  sshd_config updated" -ForegroundColor Green
         Write-Host ""
         
-        # Step 9: Configure home directory permissions (if enabled)
-        Write-Host "[9/11] Configuring home directory policy..." -ForegroundColor Yellow
-        if ($NoHomePolicy) {
-            Write-Host "  Home policy disabled (NoHomePolicy parameter)" -ForegroundColor Yellow
-        } else {
-            Set-HomeDirectoryPermissions -AuthCmdUser $AuthCmdUser | Out-Null
-            Write-Host "  Home policy configured" -ForegroundColor Green
-        }
-        Write-Host ""
-        
         # Step 10: Restart sshd service
         Write-Host "[10/11] Restarting OpenSSH Server..." -ForegroundColor Yellow
         Restart-SshdService -NoRestart $NoSshdRestart | Out-Null
@@ -1083,7 +995,6 @@ function Install-OpksshServer {
                               -InstallParams @{
                                   InstallVersion = $InstallVersion
                                   InstallFrom = $InstallFrom
-                                  NoHomePolicy = $NoHomePolicy
                                   NoRestart = $NoSshdRestart
                                   AuthCmdUser = $AuthCmdUser
                                   ConfigPath = $ConfigPath
