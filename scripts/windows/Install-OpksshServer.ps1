@@ -39,7 +39,7 @@
 
 .PARAMETER AuthCmdUser
     User account that will run the AuthorizedKeysCommand.
-    Default is "LocalSystem" (the OpenSSH service account).
+    Default is "System" (the OpenSSH service account).
     You can specify "opksshuser" to create a dedicated local user instead.
 
 .PARAMETER GitHubRepo
@@ -69,7 +69,7 @@
 .EXAMPLE
     .\Install-OpksshServer.ps1 -AuthCmdUser "opksshuser"
     
-    Install using a dedicated local user account instead of LocalSystem.
+    Install using a dedicated local user account instead of System.
 
 .NOTES
     Author: OpenPubkey Project
@@ -109,8 +109,8 @@ param(
     [string]$ConfigPath = "C:\ProgramData\opk",
 
     [Parameter(HelpMessage="User account for AuthorizedKeysCommand")]
-    [ValidateSet("LocalSystem", "opksshuser")]
-    [string]$AuthCmdUser = "LocalSystem",
+    [ValidateSet("System", "opksshuser")]
+    [string]$AuthCmdUser = "System",
 
     [Parameter(HelpMessage="GitHub repository (owner/repo)")]
     [string]$GitHubRepo = "openpubkey/opkssh"
@@ -287,8 +287,8 @@ function New-OpksshUser {
         [string]$Username
     )
     
-    if ($Username -eq "LocalSystem") {
-        Write-Verbose "Using built-in service account: LocalSystem"
+    if ($Username -eq "System") {
+        Write-Verbose "Using built-in service account: System"
         return $true
     }
     
@@ -422,6 +422,59 @@ function Install-OpksshBinary {
     
     Write-Log "Installed opkssh to: $binaryPath" -Level Success
     return $binaryPath
+}
+
+function Install-UninstallScript {
+    <#
+    .SYNOPSIS
+        Downloads the uninstall script and places it in the installation directory.
+    #>
+    [CmdletBinding(SupportsShouldProcess=$true)]
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$InstallDir,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$Version,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$GitHubRepo
+    )
+    
+    $scriptName = "Uninstall-OpksshServer.ps1"
+    $scriptPath = Join-Path $InstallDir $scriptName
+    
+    # Download from GitHub
+    if ($Version -eq "latest") {
+        $downloadUrl = "https://github.com/$GitHubRepo/releases/latest/download/$scriptName"
+    } else {
+        $downloadUrl = "https://github.com/$GitHubRepo/releases/download/$Version/$scriptName"
+    }
+    
+    Write-Log "Downloading uninstall script..."
+    Write-Verbose "Download URL: $downloadUrl"
+    
+    if ($PSCmdlet.ShouldProcess($downloadUrl, "Download to $scriptPath")) {
+        try {
+            # Use TLS 1.2
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            
+            # Download with progress
+            $ProgressPreference = 'SilentlyContinue'
+            Invoke-WebRequest -Uri $downloadUrl -OutFile $scriptPath -UseBasicParsing -ErrorAction Stop
+            $ProgressPreference = 'Continue'
+            
+            Write-Log "Installed uninstall script to: $scriptPath" -Level Success
+            Write-Verbose "Downloaded to: $scriptPath"
+        } catch {
+            # Non-fatal error - uninstall script is optional
+            Write-Warning "Could not download uninstall script: $($_.Exception.Message)"
+            Write-Warning "You can manually download it from: $downloadUrl"
+            return $null
+        }
+    }
+    
+    return $scriptPath
 }
 
 function New-OpksshConfiguration {
@@ -573,7 +626,7 @@ function Set-OpksshPermissions {
             $acl.AddAccessRule($adminRule)
             
             # Add read permissions for AuthCmdUser (if not a service account)
-            if ($AuthCmdUser -ne "LocalSystem" -and $AuthCmdUser -ne "NT AUTHORITY\SYSTEM") {
+            if ($AuthCmdUser -ne "System") {
                 $userRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
                     $AuthCmdUser,
                     "Read",
@@ -712,15 +765,12 @@ function Set-HomeDirectoryPermissions {
         [string]$AuthCmdUser
     )
     
-    if ($AuthCmdUser -eq "LocalSystem") {
-        Write-Verbose "Using LocalSystem - service account has necessary permissions"
+    if ($AuthCmdUser -eq "System") {
+        Write-Verbose "Using System - service account has necessary permissions"
         return $true
     }
     
     Write-Log "Configuring home directory permissions for user policy support..."
-    Write-Warning "Home directory policy support on Windows requires careful permission management."
-    Write-Warning "This script will grant read access to existing .opk\auth_id files."
-    Write-Warning "Users must set permissions on their own .opk\auth_id files."
     
     $usersPath = "C:\Users"
     if (-not (Test-Path $usersPath)) {
@@ -965,7 +1015,7 @@ function Install-OpksshServer {
         Write-Host ""
         
         # Step 5: Install binary
-        Write-Host "[5/10] Installing opkssh binary..." -ForegroundColor Yellow
+        Write-Host "[5/11] Installing opkssh binary..." -ForegroundColor Yellow
         $binaryPath = Install-OpksshBinary -InstallDir $InstallDir `
                                            -LocalFile $InstallFrom `
                                            -Version $InstallVersion `
@@ -974,14 +1024,26 @@ function Install-OpksshServer {
         Write-Host "  Installed: $binaryPath" -ForegroundColor Green
         Write-Host ""
         
-        # Step 6: Create configuration
-        Write-Host "[6/10] Creating configuration..." -ForegroundColor Yellow
+        # Step 6: Install uninstall script
+        Write-Host "[6/11] Installing uninstall script..." -ForegroundColor Yellow
+        $uninstallPath = Install-UninstallScript -InstallDir $InstallDir `
+                                                  -Version $InstallVersion `
+                                                  -GitHubRepo $GitHubRepo
+        if ($uninstallPath) {
+            Write-Host "  Installed: $uninstallPath" -ForegroundColor Green
+        } else {
+            Write-Host "  Uninstall script not available (optional)" -ForegroundColor Yellow
+        }
+        Write-Host ""
+        
+        # Step 7: Create configuration
+        Write-Host "[7/11] Creating configuration..." -ForegroundColor Yellow
         New-OpksshConfiguration -ConfigPath $ConfigPath -AuthCmdUser $AuthCmdUser | Out-Null
         Write-Host "  Configuration: $ConfigPath" -ForegroundColor Green
         Write-Host ""
         
-        # Step 7: Configure sshd
-        Write-Host "[7/10] Configuring OpenSSH Server..." -ForegroundColor Yellow
+        # Step 8: Configure sshd
+        Write-Host "[8/11] Configuring OpenSSH Server..." -ForegroundColor Yellow
         $sshdConfigResult = Set-SshdConfiguration -BinaryPath $binaryPath `
                                                    -AuthCmdUser $AuthCmdUser `
                                                    -OverwriteConfig $OverwriteConfig
@@ -991,8 +1053,8 @@ function Install-OpksshServer {
         Write-Host "  sshd_config updated" -ForegroundColor Green
         Write-Host ""
         
-        # Step 8: Configure home directory permissions (if enabled)
-        Write-Host "[8/10] Configuring home directory policy..." -ForegroundColor Yellow
+        # Step 9: Configure home directory permissions (if enabled)
+        Write-Host "[9/11] Configuring home directory policy..." -ForegroundColor Yellow
         if ($NoHomePolicy) {
             Write-Host "  Home policy disabled (NoHomePolicy parameter)" -ForegroundColor Yellow
         } else {
@@ -1001,8 +1063,8 @@ function Install-OpksshServer {
         }
         Write-Host ""
         
-        # Step 9: Restart sshd service
-        Write-Host "[9/10] Restarting OpenSSH Server..." -ForegroundColor Yellow
+        # Step 10: Restart sshd service
+        Write-Host "[10/11] Restarting OpenSSH Server..." -ForegroundColor Yellow
         Restart-SshdService -NoRestart $NoSshdRestart | Out-Null
         if (-not $NoSshdRestart) {
             Write-Host "  Service restarted" -ForegroundColor Green
@@ -1011,8 +1073,8 @@ function Install-OpksshServer {
         }
         Write-Host ""
         
-        # Step 10: Add to PATH and log
-        Write-Host "[10/10] Finalizing installation..." -ForegroundColor Yellow
+        # Step 11: Add to PATH and log
+        Write-Host "[11/11] Finalizing installation..." -ForegroundColor Yellow
         Add-OpksshToPath -InstallDir $InstallDir | Out-Null
         
         $logPath = Join-Path $ConfigPath "logs\opkssh-install.log"
@@ -1041,12 +1103,15 @@ function Install-OpksshServer {
         Write-Host "  2. Example - Allow alice@gmail.com to SSH as 'Administrator':" -ForegroundColor White
         Write-Host "       & '$binaryPath' add Administrator alice@gmail.com google" -ForegroundColor Gray
         Write-Host ""
-        Write-Host "  3. Configuration files:" -ForegroundColor White
-        Write-Host "       Providers:  $(Join-Path $ConfigPath 'providers')" -ForegroundColor Gray
-        Write-Host "       Auth IDs:   $(Join-Path $ConfigPath 'auth_id')" -ForegroundColor Gray
-        Write-Host "       Config:     $(Join-Path $ConfigPath 'config.yml')" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "  4. Documentation: https://github.com/$GitHubRepo" -ForegroundColor White
+        
+        if ($uninstallPath) {
+            Write-Host "  4. To uninstall opkssh:" -ForegroundColor White
+            Write-Host "       & '$uninstallPath'" -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "  5. Documentation: https://github.com/$GitHubRepo" -ForegroundColor White
+        } else {
+            Write-Host "  4. Documentation: https://github.com/$GitHubRepo" -ForegroundColor White
+        }
         Write-Host ""
         
     } catch {
