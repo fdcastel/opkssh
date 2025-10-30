@@ -265,7 +265,6 @@ function Test-OpksshVersion {
     }
     
     if ($requestedVersion -lt $minVersion) {
-        $downloadUrl = "https://raw.githubusercontent.com/$GitHubRepo/refs/tags/$Version/scripts/install-linux.sh"
         throw @"
 Installing opkssh $Version with this script is not supported.
 Minimum supported version is v$minVersionString.
@@ -313,7 +312,7 @@ function New-OpksshUser {
         try {
             New-LocalUser -Name $Username `
                          -Password $securePassword `
-                         -Description "OpenPubkey SSH verification user - Created by Install-OpksshServer.ps1" `
+                         -Description "OpenPubkey SSH verification user" `
                          -UserMayNotChangePassword `
                          -PasswordNeverExpires `
                          -AccountNeverExpires `
@@ -657,7 +656,6 @@ function Set-SshdConfiguration {
     
     # Process configuration
     $newConfigLines = @()
-    $addedConfig = $false
     
     foreach ($line in $configLines) {
         if ($line -match '^\s*AuthorizedKeysCommand\s+') {
