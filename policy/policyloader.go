@@ -19,7 +19,6 @@ package policy
 import (
 	"fmt"
 	"os/user"
-	"path"
 	"path/filepath"
 
 	"github.com/openpubkey/opkssh/policy/files"
@@ -203,7 +202,7 @@ func (h *HomePolicyLoader) LoadHomePolicy(username string, skipInvalidEntries bo
 }
 
 // UserPolicyPath returns the path to the user's opkssh policy file at
-// ~/.opk/auth_id.
+// ~/.opk/auth_id (Unix) or %USERPROFILE%\.opk\auth_id (Windows).
 func (h *HomePolicyLoader) UserPolicyPath(username string) (string, error) {
 	user, err := h.UserLookup.Lookup(username)
 	if err != nil {
@@ -214,6 +213,6 @@ func (h *HomePolicyLoader) UserPolicyPath(username string) (string, error) {
 		return "", fmt.Errorf("user %s does not have a home directory", username)
 	}
 
-	policyFilePath := path.Join(userHomeDirectory, ".opk", "auth_id")
+	policyFilePath := filepath.Join(userHomeDirectory, ".opk", "auth_id")
 	return policyFilePath, nil
 }
