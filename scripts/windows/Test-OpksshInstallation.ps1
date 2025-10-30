@@ -332,7 +332,7 @@ function Test-NetworkConnectivity {
     
     foreach ($provider in $providers) {
         try {
-            $response = Invoke-WebRequest -Uri $provider.Url -Method Head -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
+            $null = Invoke-WebRequest -Uri $provider.Url -Method Head -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
             Write-TestResult -TestName "$($provider.Name) reachable" -Result Pass
         } catch {
             Write-TestResult -TestName "$($provider.Name) reachable" -Result Warning -Message "Cannot reach $($provider.Url)"

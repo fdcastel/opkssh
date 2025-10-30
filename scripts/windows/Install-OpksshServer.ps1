@@ -590,89 +590,8 @@ https://issuer.hello.coop app_xejobTKEsDNSRd5vofKB2iay_2rN 24h
         }
     }
     
-    # Set permissions on configuration files and directories
-    if ($PSCmdlet.ShouldProcess($ConfigPath, "Set NTFS permissions")) {
-        Set-OpksshPermissions -Path $ConfigPath -AuthCmdUser $AuthCmdUser -Recurse
-    }
-    
     Write-Log "Configuration created successfully" -Level Success
     return $true
-}
-
-function Set-OpksshPermissions {
-    <#
-    .SYNOPSIS
-        Sets appropriate NTFS permissions on opkssh files and directories.
-    #>
-    [CmdletBinding(SupportsShouldProcess=$true)]
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Path,
-        
-        [Parameter(Mandatory=$true)]
-        [string]$AuthCmdUser,
-        
-        [Parameter()]
-        [switch]$Recurse
-    )
-    
-    $items = @(Get-Item $Path)
-    if ($Recurse) {
-        $items += Get-ChildItem $Path -Recurse
-    }
-    
-    foreach ($item in $items) {
-        try {
-            Write-Verbose "  Setting permissions on: $($item.FullName)"
-            
-            $acl = Get-Acl $item.FullName
-            
-            # Disable inheritance and remove inherited rules
-            $acl.SetAccessRuleProtection($true, $false)
-            
-            # Remove all existing access rules
-            $acl.Access | ForEach-Object { 
-                $acl.RemoveAccessRule($_) | Out-Null 
-            }
-            
-            # Add SYSTEM - Full Control
-            $systemRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-                "NT AUTHORITY\SYSTEM",
-                "FullControl",
-                "ContainerInherit,ObjectInherit",
-                "None",
-                "Allow"
-            )
-            $acl.AddAccessRule($systemRule)
-            
-            # Add Administrators - Full Control
-            $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-                "BUILTIN\Administrators",
-                "FullControl",
-                "ContainerInherit,ObjectInherit",
-                "None",
-                "Allow"
-            )
-            $acl.AddAccessRule($adminRule)
-            
-            # Add read permissions for AuthCmdUser (if not a service account)
-            if ($AuthCmdUser -ne "System") {
-                $userRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-                    $AuthCmdUser,
-                    "Read",
-                    "ContainerInherit,ObjectInherit",
-                    "None",
-                    "Allow"
-                )
-                $acl.AddAccessRule($userRule)
-            }
-            
-            Set-Acl $item.FullName $acl
-            
-        } catch {
-            Write-Warning "Failed to set permissions on $($item.FullName): $($_.Exception.Message)"
-        }
-    }
 }
 
 function Set-SshdConfiguration {
@@ -1010,7 +929,7 @@ function Install-OpksshServer {
         Write-Host ""
         
         # Step 5: Install binary
-        Write-Host "[5/11] Installing opkssh binary..." -ForegroundColor Yellow
+        Write-Host "[5/10] Installing opkssh binary..." -ForegroundColor Yellow
         $binaryPath = Install-OpksshBinary -InstallDir $InstallDir `
                                            -LocalFile $InstallFrom `
                                            -Version $InstallVersion `
@@ -1020,7 +939,7 @@ function Install-OpksshServer {
         Write-Host ""
         
         # Step 6: Install uninstall script
-        Write-Host "[6/11] Installing uninstall script..." -ForegroundColor Yellow
+        Write-Host "[6/10] Installing uninstall script..." -ForegroundColor Yellow
         $uninstallPath = Install-UninstallScript -InstallDir $InstallDir `
                                                   -Version $InstallVersion `
                                                   -GitHubRepo $GitHubRepo
@@ -1032,13 +951,13 @@ function Install-OpksshServer {
         Write-Host ""
         
         # Step 7: Create configuration
-        Write-Host "[7/11] Creating configuration..." -ForegroundColor Yellow
+        Write-Host "[7/10] Creating configuration..." -ForegroundColor Yellow
         New-OpksshConfiguration -ConfigPath $ConfigPath -AuthCmdUser $AuthCmdUser | Out-Null
         Write-Host "  Configuration: $ConfigPath" -ForegroundColor Green
         Write-Host ""
         
         # Step 8: Configure sshd
-        Write-Host "[8/11] Configuring OpenSSH Server..." -ForegroundColor Yellow
+        Write-Host "[8/10] Configuring OpenSSH Server..." -ForegroundColor Yellow
         $sshdConfigResult = Set-SshdConfiguration -BinaryPath $binaryPath `
                                                    -AuthCmdUser $AuthCmdUser `
                                                    -OverwriteConfig $OverwriteConfig
@@ -1049,7 +968,7 @@ function Install-OpksshServer {
         Write-Host ""
         
         # Step 10: Restart sshd service
-        Write-Host "[10/11] Restarting OpenSSH Server..." -ForegroundColor Yellow
+        Write-Host "[9/10] Restarting OpenSSH Server..." -ForegroundColor Yellow
         Restart-SshdService -NoRestart $NoSshdRestart | Out-Null
         if (-not $NoSshdRestart) {
             Write-Host "  Service restarted" -ForegroundColor Green
@@ -1059,7 +978,7 @@ function Install-OpksshServer {
         Write-Host ""
         
         # Step 11: Add to PATH and log
-        Write-Host "[11/11] Finalizing installation..." -ForegroundColor Yellow
+        Write-Host "[10/10] Finalizing installation..." -ForegroundColor Yellow
         Add-OpksshToPath -InstallDir $InstallDir | Out-Null
         
         $logPath = Join-Path $ConfigPath "logs\opkssh-install.log"
@@ -1089,13 +1008,12 @@ function Install-OpksshServer {
         Write-Host ""
         
         if ($uninstallPath) {
-            Write-Host "  4. To uninstall opkssh:" -ForegroundColor White
+            Write-Host "  3. To uninstall opkssh:" -ForegroundColor White
             Write-Host "       & '$uninstallPath'" -ForegroundColor Gray
             Write-Host ""
-            Write-Host "  5. Documentation: https://github.com/$GitHubRepo" -ForegroundColor White
-        } else {
-            Write-Host "  4. Documentation: https://github.com/$GitHubRepo" -ForegroundColor White
         }
+
+        Write-Host "Documentation: https://github.com/openpubkey/opkssh" -ForegroundColor White
         Write-Host ""
         
     } catch {
@@ -1143,4 +1061,10 @@ $($_.ScriptStackTrace)
 #endregion Main Installation Logic
 
 # Execute main installation
+try {
     Install-OpksshServer
+}
+catch {
+    # Final catch to improve error display.
+    $_.Exception | Write-Host -ForegroundColor Red
+}
