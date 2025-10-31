@@ -1,0 +1,76 @@
+name: Test GitHub Provider (Windows)
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build and Test Windows Container
+    runs-on: windows-2022
+    permissions:
+      id-token: write
+      contents: read
+    timeout-minutes: 30
+    steps:
+    - name: Checkout
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      with:
+        persist-credentials: false
+    
+    - name: Install Go
+      uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+      with:
+        go-version-file: 'go.mod'
+    
+    - name: Install dependencies
+      run: go mod download
+    
+    - name: Build opkssh
+      run: go build -v -o opkssh.exe
+    
+    # docker/build-push-action does not support Windows containers.
+    - name: Build Windows Container
+      run: |
+        docker build `
+          --build-arg AUTHORIZED_REPOSITORY=${{ github.repository }} `
+          --build-arg AUTHORIZED_REF=${{ github.ref }} `
+          -t sshserver:windows `
+          -f .github/workflows/gha_opkssh_windows.Dockerfile `
+          .
+    # We also cannot use GitHub Cache :/
+    
+    - name: Run SSH Container
+      run: |
+        # Run container in background
+        docker run -d -p 2222:22 --name sshserver sshserver:windows
+        
+        # Wait for SSH service to be ready
+        Start-Sleep -Seconds 5
+        
+        # Check container is running
+        docker ps -a
+    
+    - name: Login with GitHub OIDC
+      run: |
+        go run main.go login github --print-id-token
+    
+    # Use 127.0.0.1 instead of localhost
+    - name: SSH into Container with opkssh
+      run: |
+        ssh -o StrictHostKeyChecking=no -p 2222 Administrator@127.0.0.1 dir
+    
+    # Use `docker exec` to inspect container
+    - name: Debug - Dump opkssh config
+      run: |
+        docker exec sshserver powershell -Command "Get-ChildItem 'C:\ProgramData\opk' -Recurse"
+        docker exec sshserver powershell -Command "Get-Content 'C:\ProgramData\opk\providers'"
+        docker exec sshserver powershell -Command "Get-Content 'C:\ProgramData\opk\auth_id'"
+      if: always()
+    
+    - name: Debug - Dump logs
+      run: |
+        docker exec sshserver powershell -Command "Get-Content 'C:\ProgramData\opk\logs\opkssh.log' -ErrorAction SilentlyContinue"
+      if: always()
