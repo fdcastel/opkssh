@@ -1,11 +1,7 @@
 name: Go Checks
 
 on:
-  pull_request:
-    paths:
-      - "**.go"
-      - "go.mod"
-      - "go.sum"
+  push:
 
 permissions: {}
 
