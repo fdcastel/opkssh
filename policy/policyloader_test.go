@@ -20,7 +20,7 @@ import (
 	"errors"
 	"os"
 	"os/user"
-	"path"
+	"path/filepath"
 	"testing"
 
 	"github.com/openpubkey/opkssh/policy"
@@ -136,7 +136,7 @@ func TestLoadUserPolicy_ErrorFile(t *testing.T) {
 	policyLoader := NewTestHomePolicyLoader(afero.NewMemMapFs(), mockUserLookup)
 	mockFs := policyLoader.FileLoader.Fs
 	// Create policy file at user policy path with invalid data
-	err := afero.WriteFile(mockFs, path.Join(ValidUser.HomeDir, ".opk", "auth_id"), []byte("{"), 0600)
+	err := afero.WriteFile(mockFs, filepath.Join(ValidUser.HomeDir, ".opk", "auth_id"), []byte("{"), 0600)
 	require.NoError(t, err)
 
 	policy, path, err := policyLoader.LoadHomePolicy(ValidUser.Username, false)
@@ -167,7 +167,7 @@ func TestLoadUserPolicy_Success(t *testing.T) {
 	}
 	testPolicyFile, err := testPolicy.ToTable()
 	require.NoError(t, err)
-	expectedPath := path.Join(ValidUser.HomeDir, ".opk", "auth_id")
+	expectedPath := filepath.Join(ValidUser.HomeDir, ".opk", "auth_id")
 	err = afero.WriteFile(mockFs, expectedPath, testPolicyFile, 0600)
 	require.NoError(t, err)
 
@@ -228,7 +228,7 @@ func TestLoadUserPolicy_Success_SkipInvalidEntries(t *testing.T) {
 	}
 	testPolicyFile, err := testPolicy.ToTable()
 	require.NoError(t, err)
-	expectedPath := path.Join(ValidUser.HomeDir, ".opk", "auth_id")
+	expectedPath := filepath.Join(ValidUser.HomeDir, ".opk", "auth_id")
 	err = afero.WriteFile(mockFs, expectedPath, testPolicyFile, 0600)
 	require.NoError(t, err)
 	gotPolicy, gotPath, err := policyLoader.LoadHomePolicy(ValidUser.Username, true)
