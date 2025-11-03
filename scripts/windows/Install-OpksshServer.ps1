@@ -287,6 +287,9 @@ function Test-OpksshVersion {
     
     # Parse requested version (remove 'v' prefix if present)
     $versionString = $Version -replace '^v', ''
+
+    # Remove '-<suffix>' (used in pre-release versions) if present.
+    $versionString, $_ = $versionString.Split('-')
     
     try {
         $requestedVersion = [version]$versionString
