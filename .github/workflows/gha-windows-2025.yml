@@ -5,8 +5,8 @@ on:
 
 jobs:
   build:
-    name: Test on Windows Server 2022
-    runs-on: windows-2022
+    name: Test on Windows Server 2025
+    runs-on: windows-2025
     permissions:
       id-token: write
       contents: read
@@ -58,7 +58,6 @@ jobs:
         powershell -ExecutionPolicy Bypass -File "scripts/windows/Install-OpksshServer.ps1" `
           -InstallFrom "$PWD\opkssh.exe" `
           -NoSshdRestart `
-          -AuthCmdUser 'opksshuser' `
           -Verbose
     
     - name: Add GitHub provider to opkssh configuration
