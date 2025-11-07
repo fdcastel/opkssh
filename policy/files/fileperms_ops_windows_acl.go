@@ -62,40 +62,10 @@ func (w *WindowsACLFilePermsOps) Chown(path string, owner string, group string) 
 
 	// Set owner via Win32 LookupAccountNameW -> SetNamedSecurityInfoW
 	if ownerName != "" {
-		// LookupAccountNameW to get SID buffer size
-		procLookupAccountName := advapi32.NewProc("LookupAccountNameW")
-		pName, _ := syscall.UTF16PtrFromString(ownerName)
-		var sidSize uint32
-		var domSize uint32
-		var sidUse uint32
-		// first call to get required sizes
-		procLookupAccountName.Call(
-			0,
-			uintptr(unsafe.Pointer(pName)),
-			0,
-			uintptr(unsafe.Pointer(&sidSize)),
-			0,
-			uintptr(unsafe.Pointer(&domSize)),
-			uintptr(unsafe.Pointer(&sidUse)),
-		)
-		if sidSize == 0 {
-			return fmt.Errorf("LookupAccountNameW: could not determine SID buffer size for %s", ownerName)
-		}
-		sid := make([]byte, sidSize)
-		dom := make([]uint16, domSize)
-		ret, _, err := procLookupAccountName.Call(
-			0,
-			uintptr(unsafe.Pointer(pName)),
-			uintptr(unsafe.Pointer(&sid[0])),
-			uintptr(unsafe.Pointer(&sidSize)),
-			uintptr(unsafe.Pointer(&dom[0])),
-			uintptr(unsafe.Pointer(&domSize)),
-			uintptr(unsafe.Pointer(&sidUse)),
-		)
-		if ret == 0 {
+		sid, _, err := ResolveAccountToSID(ownerName)
+		if err != nil {
 			return fmt.Errorf("LookupAccountNameW failed for %s: %v", ownerName, err)
 		}
-
 		// Apply owner using SetNamedSecurityInfoW
 		pPath, _ := syscall.UTF16PtrFromString(path)
 		ret2, _, err := procSetNamedSecurityInfo.Call(
@@ -130,48 +100,6 @@ func (w *WindowsACLFilePermsOps) Chown(path string, owner string, group string) 
 	return nil
 }
 
-// ResolveAccountToSID resolves an account name (e.g. "Administrators") to a
-// raw SID byte slice and returns the SID_NAME_USE (sidUse) value. Returns an
-// error if resolution fails.
-func ResolveAccountToSID(name string) ([]byte, uint32, error) {
-	if name == "" {
-		return nil, 0, fmt.Errorf("empty name")
-	}
-	pName, _ := syscall.UTF16PtrFromString(name)
-	var sidSize uint32
-	var domSize uint32
-	var sidUse uint32
-	// first call to determine sizes
-	r, _, _ := procLookupAccountName.Call(
-		0,
-		uintptr(unsafe.Pointer(pName)),
-		0,
-		uintptr(unsafe.Pointer(&sidSize)),
-		0,
-		uintptr(unsafe.Pointer(&domSize)),
-		uintptr(unsafe.Pointer(&sidUse)),
-	)
-	_ = r
-	if sidSize == 0 {
-		return nil, 0, fmt.Errorf("LookupAccountNameW: could not determine SID buffer size for %s", name)
-	}
-	sid := make([]byte, sidSize)
-	dom := make([]uint16, domSize)
-	ret, _, err := procLookupAccountName.Call(
-		0,
-		uintptr(unsafe.Pointer(pName)),
-		uintptr(unsafe.Pointer(&sid[0])),
-		uintptr(unsafe.Pointer(&sidSize)),
-		uintptr(unsafe.Pointer(&dom[0])),
-		uintptr(unsafe.Pointer(&domSize)),
-		uintptr(unsafe.Pointer(&sidUse)),
-	)
-	if ret == 0 {
-		return nil, 0, fmt.Errorf("LookupAccountNameW failed for %s: %v", name, err)
-	}
-	return sid, sidUse, nil
-}
-
 // EXPLICIT_ACCESS and TRUSTEE definitions for calling SetEntriesInAclW
 type _TRUSTEE struct {
 	MultipleTrustee         uintptr
@@ -191,7 +119,6 @@ type _EXPLICIT_ACCESS struct {
 var (
 	procSetEntriesInAcl      = advapi32.NewProc("SetEntriesInAclW")
 	procSetNamedSecurityInfo = advapi32.NewProc("SetNamedSecurityInfoW")
-	procLookupAccountName    = advapi32.NewProc("LookupAccountNameW")
 )
 
 const (
@@ -324,53 +251,18 @@ func (w *WindowsACLFilePermsOps) ApplyACE(path string, ace ACE) error {
 			PtstrName:               unsafe.Pointer(&ace.PrincipalSID[0]),
 		}
 	} else {
-		// Attempt to resolve account name to SID and use TRUSTEE_IS_SID if possible
-		pName, _ := syscall.UTF16PtrFromString(ace.Principal)
-		var sidSize uint32
-		var domSize uint32
-		var sidUse uint32
-		// first call to determine sizes
-		procLookupAccountName.Call(
-			0,
-			uintptr(unsafe.Pointer(pName)),
-			0,
-			uintptr(unsafe.Pointer(&sidSize)),
-			0,
-			uintptr(unsafe.Pointer(&domSize)),
-			uintptr(unsafe.Pointer(&sidUse)),
-		)
-		if sidSize != 0 {
-			sid := make([]byte, sidSize)
-			dom := make([]uint16, domSize)
-			ret, _, _ := procLookupAccountName.Call(
-				0,
-				uintptr(unsafe.Pointer(pName)),
-				uintptr(unsafe.Pointer(&sid[0])),
-				uintptr(unsafe.Pointer(&sidSize)),
-				uintptr(unsafe.Pointer(&dom[0])),
-				uintptr(unsafe.Pointer(&domSize)),
-				uintptr(unsafe.Pointer(&sidUse)),
-			)
-			if ret != 0 {
-				ea.Trustee = _TRUSTEE{
-					MultipleTrustee:         0,
-					MultipleTrusteeOperator: 0,
-					TrusteeForm:             TRUSTEE_IS_SID,
-					TrusteeType:             sidUseToTrusteeType(sidUse),
-					PtstrName:               unsafe.Pointer(&sid[0]),
-				}
-			} else {
-				// fallback to name
-				ea.Trustee = _TRUSTEE{
-					MultipleTrustee:         0,
-					MultipleTrusteeOperator: 0,
-					TrusteeForm:             TRUSTEE_IS_NAME,
-					TrusteeType:             TRUSTEE_TYPE_UNKNOWN,
-					PtstrName:               unsafe.Pointer(pName),
-				}
+		// Attempt to resolve to SID via helper
+		sid, sidUse, err := ResolveAccountToSID(ace.Principal)
+		if err == nil && len(sid) > 0 {
+			ea.Trustee = _TRUSTEE{
+				MultipleTrustee:         0,
+				MultipleTrusteeOperator: 0,
+				TrusteeForm:             TRUSTEE_IS_SID,
+				TrusteeType:             sidUseToTrusteeType(sidUse),
+				PtstrName:               unsafe.Pointer(&sid[0]),
 			}
 		} else {
-			// fallback: use name
+			pName, _ := syscall.UTF16PtrFromString(ace.Principal)
 			ea.Trustee = _TRUSTEE{
 				MultipleTrustee:         0,
 				MultipleTrusteeOperator: 0,
