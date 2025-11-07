@@ -76,6 +76,7 @@ func runPermissionsCheck() error {
 		vfs = afero.NewOsFs()
 	}
 	ops := files.NewDefaultFilePermsOps(vfs)
+	aclVerifier := files.NewDefaultACLVerifier(vfs)
 	// Use a permissive CmdRunner for in-memory filesystems used in tests.
 	checker := files.PermsChecker{Fs: vfs, CmdRunner: func(name string, arg ...string) ([]byte, error) {
 		// Return owner/group that match expected values so tests won't fail
@@ -91,6 +92,22 @@ func runPermissionsCheck() error {
 	} else {
 		if err := checker.CheckPerm(systemPolicy, []fs.FileMode{files.ModeSystemPerms}, "root", ""); err != nil {
 			problems = append(problems, fmt.Sprintf("%s: %v", systemPolicy, err))
+		}
+		// ACL verification: print owner and ACEs
+		report, err := aclVerifier.VerifyACL(systemPolicy, files.ExpectedACL{Owner: "root", Mode: files.ModeSystemPerms})
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("%s: acl verify error: %v", systemPolicy, err))
+		} else {
+			fmt.Printf("%s: owner=%s mode=%o\n", systemPolicy, report.Owner, report.Mode)
+			if len(report.ACEs) > 0 {
+				fmt.Println("  ACEs:")
+				for _, a := range report.ACEs {
+					fmt.Printf("    - %s: %s (%s) inherited=%v\n", a.Principal, a.Type, a.Rights, a.Inherited)
+				}
+			}
+			for _, p := range report.Problems {
+				fmt.Println("  ACL problem:", p)
+			}
 		}
 	}
 
