@@ -49,6 +49,16 @@ func TestApplyAndVerifyACE_WindowsIntegration(t *testing.T) {
 		t.Fatalf("ResolveAccountToSID failed: %v", err)
 	}
 
+	sidStr, err := files.ConvertSidToString(sid)
+	if err != nil {
+		t.Logf("ConvertSidToString failed: %v", err)
+	} else {
+		t.Logf("resolved Administrators SID: %s", sidStr)
+		if len(sidStr) < 3 || sidStr[:2] != "S-" {
+			t.Fatalf("unexpected SID string: %q", sidStr)
+		}
+	}
+
 	ace := files.ACE{Principal: "Administrators", PrincipalSID: sid, Rights: "GENERIC_READ", Type: "allow"}
 	if err := ops.ApplyACE(testFile, ace); err != nil {
 		t.Fatalf("ApplyACE failed: %v", err)

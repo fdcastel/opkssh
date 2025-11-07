@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 var procLookupAccountName = advapi32.NewProc("LookupAccountNameW")
+var procConvertSidToString = advapi32.NewProc("ConvertSidToStringSidW")
 
 // ResolveAccountToSID resolves an account name (e.g. "Administrators") to a
 // raw SID byte slice and returns the SID_NAME_USE (sidUse) value. Returns an
@@ -50,4 +53,31 @@ func ResolveAccountToSID(name string) ([]byte, uint32, error) {
 		return nil, 0, fmt.Errorf("LookupAccountNameW failed for %s: %v", name, err)
 	}
 	return sid, sidUse, nil
+}
+
+// ConvertSidToString converts a raw SID byte slice into the standard textual
+// SID representation (e.g. S-1-5-32-544). Caller must handle errors.
+func ConvertSidToString(sid []byte) (string, error) {
+	if len(sid) == 0 {
+		return "", fmt.Errorf("empty SID")
+	}
+	var pStr uintptr
+	ret, _, err := procConvertSidToString.Call(
+		uintptr(unsafe.Pointer(&sid[0])),
+		uintptr(unsafe.Pointer(&pStr)),
+	)
+	if ret == 0 {
+		return "", fmt.Errorf("ConvertSidToStringSidW failed: %v", err)
+	}
+	if pStr == 0 {
+		return "", fmt.Errorf("ConvertSidToStringSidW returned NULL")
+	}
+	// pStr is LPWSTR (pointer to UTF-16). Convert to Go string.
+	wptr := (*uint16)(unsafe.Pointer(pStr))
+	s := windows.UTF16PtrToString(wptr)
+	// Free memory allocated by ConvertSidToStringSidW
+	if procLocalFree != nil {
+		procLocalFree.Call(pStr)
+	}
+	return s, nil
 }
