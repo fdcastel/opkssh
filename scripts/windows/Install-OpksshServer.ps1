@@ -985,6 +985,15 @@ function Install-OpksshServer {
         Add-OpksshToPath -InstallDir $InstallDir | Out-Null
         
         $logPath = Join-Path $ConfigPath "logs\opkssh-install.log"
+        # Apply recommended filesystem permissions using the installed binary
+        Write-Host "Applying recommended permissions via opkssh CLI..." -ForegroundColor Yellow
+        try {
+            & $binaryPath permissions install --verbose
+            Write-Host "  permissions applied" -ForegroundColor Green
+        } catch {
+            Write-Warning "permissions install failed: $($_.Exception.Message)"
+            throw "permissions install failed"
+        }
         Write-InstallationLog -LogPath $logPath `
                               -BinaryPath $binaryPath `
                               -InstallParams @{

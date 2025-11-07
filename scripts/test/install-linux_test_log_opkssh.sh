@@ -56,8 +56,7 @@ EOF
 
     assertEquals "Expected to return 0 on success" 0 "$result"
     assertEquals "Expected output to print installation success on stdout" "Installation successful! Run 'opkssh' to use it." "$output"
-    assertContains "Expected to set correct permission on log file" "${mock_log[*]}" "chmod 660 $OPKSSH_LOGFILE"
-    assertContains "Expected to set correct ownership on log file" "${mock_log[*]}" "chown root:$AUTH_CMD_USER $OPKSSH_LOGFILE"
+    # final ownership/mode of the log file is managed by `opk permissions install`
     assertEquals "Expected to log correct information" "Successfully installed $BINARY_NAME (INSTALLED_ON: Wed Jun  4 21:59:26 PM CEST 2025, VERSION_INSTALLED: opkssh version X.Y.Z, INSTALL_VERSION: $INSTALL_VERSION, LOCAL_INSTALL_FILE: , HOME_POLICY: true, RESTART_SSH: true)" "${log_file[1]}"
 
 }

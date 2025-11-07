@@ -487,10 +487,9 @@ install_opkssh_binary() {
     # Move to installation directory
     mv "$BINARY_PATH" "$INSTALL_DIR/$BINARY_NAME"
 
-    # Make the binary executable, correct permissions/ownership
+    # Make the binary executable; final ownership/mode will be set by
+    # `opk permissions install` which is invoked later in the installer.
     chmod +x "$INSTALL_DIR/$BINARY_NAME"
-    chown root:"${AUTH_CMD_GROUP}" "$INSTALL_DIR/$BINARY_NAME"
-    chmod 755 "$INSTALL_DIR/$BINARY_NAME"
 
     if command -v "$INSTALL_DIR"/"$BINARY_NAME" &>/dev/null; then
         echo "Installed $BINARY_NAME to $INSTALL_DIR/$BINARY_NAME"
@@ -586,32 +585,22 @@ configure_opkssh() {
 
     if [[ ! -e "$etc_path/opk" ]]; then
         mkdir -p "$etc_path/opk"
-        chown root:"${AUTH_CMD_GROUP}" "$etc_path/opk"
-        chmod 750 "$etc_path/opk"
     fi
 
     if [[ ! -e "$etc_path/opk/policy.d" ]]; then
         mkdir -p "$etc_path/opk/policy.d"
-        chown root:"${AUTH_CMD_GROUP}" "$etc_path/opk/policy.d"
-        chmod 750 "$etc_path/opk/policy.d"
     fi
 
     if [[ ! -e "$etc_path/opk/auth_id" ]]; then
         touch "$etc_path/opk/auth_id"
-        chown root:"${AUTH_CMD_GROUP}" "$etc_path/opk/auth_id"
-        chmod 640 "$etc_path/opk/auth_id"
     fi
 
     if [[ ! -e "$etc_path/opk/config.yml" ]]; then
         touch "$etc_path/opk/config.yml"
-        chown root:"${AUTH_CMD_GROUP}" "$etc_path/opk/config.yml"
-        chmod 640 "$etc_path/opk/config.yml"
     fi
 
     if [[ ! -e "$etc_path/opk/providers" ]]; then
         touch "$etc_path/opk/providers"
-        chown root:"${AUTH_CMD_GROUP}" "$etc_path/opk/providers"
-        chmod 640 "$etc_path/opk/providers"
     fi
 
     if [[ -s "$etc_path/opk/providers" ]]; then
@@ -758,8 +747,7 @@ configure_sudo() {
 log_opkssh_installation() {
     local log_file="${1:-/var/log/opkssh.log}"
     touch "$log_file"
-    chown root:"${AUTH_CMD_GROUP}" "$log_file"
-    chmod 660 "$log_file"
+    # Final ownership/mode for the log file is managed by `opk permissions install`
 
     VERSION_INSTALLED=$("$INSTALL_DIR"/"$BINARY_NAME" --version)
     INSTALLED_ON=$(date)
@@ -797,6 +785,16 @@ main() {
     restart_openssh_server || return 1
     if [[ "$HOME_POLICY" == true ]]; then
         configure_sudo
+    fi
+    # Apply recommended filesystem permissions via opkssh CLI (installer-friendly)
+    if command -v "$INSTALL_DIR/$BINARY_NAME" &>/dev/null; then
+        echo "Applying recommended permissions with $BINARY_NAME permissions install..."
+        if ! "$INSTALL_DIR/$BINARY_NAME" permissions install --verbose; then
+            echo "Error: permissions install failed" >&2
+            return 1
+        fi
+    else
+        echo "Warning: $BINARY_NAME not found in $INSTALL_DIR, skipping permissions install"
     fi
     log_opkssh_installation
 }

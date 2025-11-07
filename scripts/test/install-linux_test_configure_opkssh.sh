@@ -43,25 +43,20 @@ test_configure_opkssh_no_previous_configuration() {
 
     assertEquals "Expected to return 0 on success" 0 "$result"
     assertEquals "Output was not expected" "Configuring opkssh:" "$output"
-    assertTrue "Expected /etc/opk direcotry to be created" "[ -d \"$TEST_TEMP_DIR\"/opk ]"
-    assertContains "Expected /etc/opk to set the correct ownership" "${mock_log[*]}" "chown root:${AUTH_CMD_GROUP} $TEST_TEMP_DIR/opk"
-    assertContains "Expected /etc/opk to set the correct permission" "${mock_log[*]}" "chmod 750 $TEST_TEMP_DIR/opk"
+    assertTrue "Expected /etc/opk directory to be created" "[ -d \"$TEST_TEMP_DIR\"/opk ]"
+    # final ownership/mode for created files/dirs is managed by `opk permissions install`
 
-    assertTrue "Expected /etc/opk/policy.d direcotry to be created" "[ -d \"$TEST_TEMP_DIR\"/opk/policy.d ]"
-    assertContains "Expected /etc/opk/policy.d to set the correct ownership" "${mock_log[*]}" "chown root:${AUTH_CMD_GROUP} $TEST_TEMP_DIR/opk/policy.d"
-    assertContains "Expected /etc/opk/policy.d to set the correct permission" "${mock_log[*]}" "chmod 750 $TEST_TEMP_DIR/opk/policy.d"
+    assertTrue "Expected /etc/opk/policy.d directory to be created" "[ -d \"$TEST_TEMP_DIR\"/opk/policy.d ]"
+    # final ownership/mode for created files/dirs is managed by `opk permissions install`
 
     assertTrue "Expected /etc/opk/auth_id file to be created" "[ -f \"$TEST_TEMP_DIR\"/opk/auth_id ]"
-    assertContains "Expected /etc/opk/auth_id to set the correct ownership" "${mock_log[*]}" "chown root:${AUTH_CMD_GROUP} $TEST_TEMP_DIR/opk/auth_id"
-    assertContains "Expected /etc/opk/auth_id to set the correct permission" "${mock_log[*]}" "chmod 640 $TEST_TEMP_DIR/opk/auth_id"
+    # final ownership/mode for created files/dirs is managed by `opk permissions install`
 
     assertTrue "Expected /etc/opk/config.yaml file to be created" "[ -f \"$TEST_TEMP_DIR\"/opk/config.yml ]"
-    assertContains "Expected /etc/opk/config.yaml to set the correct ownership" "${mock_log[*]}" "chown root:${AUTH_CMD_GROUP} $TEST_TEMP_DIR/opk/config.yml"
-    assertContains "Expected /etc/opk/config.yaml to set the correct permission" "${mock_log[*]}" "chmod 640 $TEST_TEMP_DIR/opk/config.yml"
+    # final ownership/mode for created files/dirs is managed by `opk permissions install`
 
     assertTrue "Expected /etc/opk/providers file to be created" "[ -f \"$TEST_TEMP_DIR\"/opk/providers ]"
-    assertContains "Expected /etc/opk/providers to set the correct ownership" "${mock_log[*]}" "chown root:${AUTH_CMD_GROUP} $TEST_TEMP_DIR/opk/providers"
-    assertContains "Expected /etc/opk/providers to set the correct permission" "${mock_log[*]}" "chmod 640 $TEST_TEMP_DIR/opk/providers"
+    # final ownership/mode for created files/dirs is managed by `opk permissions install`
 
     assertEquals "Expected first provider to be Google" "$provider_google" "${providers[0]}"
     assertEquals "Expected second provider to be Microsoft" "$provider_microsoft" "${providers[1]}"

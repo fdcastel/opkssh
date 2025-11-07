@@ -38,6 +38,11 @@ var ConfirmPrompt = func(prompt string) (bool, error) {
 // override it.
 var IsElevatedFunc = IsElevated
 
+// RunPermissionsFixWithDepsFn is an injectable function used by the CLI to run
+// the permissions fixer with dependencies. Tests may override this to inject
+// mocks.
+var RunPermissionsFixWithDepsFn = runPermissionsFixWithDeps
+
 // NewPermissionsCmd returns the permissions parent command with subcommands
 func NewPermissionsCmd() *cobra.Command {
 	permissionsCmd := &cobra.Command{
@@ -73,6 +78,25 @@ func NewPermissionsCmd() *cobra.Command {
 
 	permissionsCmd.AddCommand(checkCmd)
 	permissionsCmd.AddCommand(fixCmd)
+
+	installCmd := &cobra.Command{
+		Use:   "install",
+		Short: "Idempotent installer-friendly permissions fix (non-interactive)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			vfs := DefaultFs
+			if vfs == nil {
+				vfs = afero.NewOsFs()
+			}
+			op := files.NewDefaultFilePermsOps(vfs)
+			av := files.NewDefaultACLVerifier(vfs)
+			// installers expect non-interactive behavior; force yes=true
+			return RunPermissionsFixWithDepsFn(op, av, vfs, dryRun, true, verbose)
+		},
+	}
+	installCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Don't modify anything; show planned changes")
+	installCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
+
+	permissionsCmd.AddCommand(installCmd)
 	return permissionsCmd
 }
 
