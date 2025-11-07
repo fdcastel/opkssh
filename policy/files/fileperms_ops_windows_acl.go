@@ -93,3 +93,44 @@ func (w *WindowsACLFilePermsOps) Chown(path string, owner string, group string) 
 
 	return nil
 }
+
+// ApplyACE applies an ACE to the specified path using icacls.
+func (w *WindowsACLFilePermsOps) ApplyACE(path string, ace ACE) error {
+	// Map rights to icacls permission shorthand
+	perm := rightsToIcacls(ace.Rights)
+	if perm == "" {
+		perm = "F"
+	}
+	// Build grant or deny
+	var cmd *exec.Cmd
+	if ace.Type == "allow" {
+		grant := fmt.Sprintf("%s:%s", ace.Principal, perm)
+		cmd = exec.Command("icacls", path, "/grant", grant)
+	} else if ace.Type == "deny" {
+		deny := fmt.Sprintf("%s:%s", ace.Principal, perm)
+		cmd = exec.Command("icacls", path, "/deny", deny)
+	} else {
+		// Unsupported ACE type
+		return fmt.Errorf("unsupported ACE type %s", ace.Type)
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("icacls failed: %v: %s", err, string(out))
+	}
+	return nil
+}
+
+// rightsToIcacls maps our human-readable rights to icacls shorthand permissions.
+func rightsToIcacls(rights string) string {
+	// Simple heuristics: prefer Full (F) when GENERIC_ALL or WRITE_OWNER present
+	if strings.Contains(rights, "GENERIC_ALL") || strings.Contains(rights, "WRITE_OWNER") || strings.Contains(rights, "WRITE_DAC") {
+		return "F"
+	}
+	if strings.Contains(rights, "FILE_WRITE_DATA") || strings.Contains(rights, "FILE_WRITE_ATTRIBUTES") {
+		return "M"
+	}
+	if strings.Contains(rights, "FILE_READ_DATA") || strings.Contains(rights, "READ_CONTROL") {
+		return "R"
+	}
+	return ""
+}

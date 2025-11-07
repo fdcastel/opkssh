@@ -20,6 +20,9 @@ type FilePermsOps interface {
 	Chmod(path string, perm fs.FileMode) error
 	Stat(path string) (fs.FileInfo, error)
 	Chown(path string, owner string, group string) error
+	// ApplyACE applies a single ACE to the target path. On platforms that
+	// don't support ACE modifications, this may be a no-op or return nil.
+	ApplyACE(path string, ace ACE) error
 }
 
 // OsFilePermsOps is a default implementation that delegates to an afero.Fs
@@ -96,4 +99,9 @@ func (o *OsFilePermsOps) Chown(path string, owner string, group string) error {
 		gid = int(gid64)
 	}
 	return os.Chown(path, uid, gid)
+}
+
+func (o *OsFilePermsOps) ApplyACE(path string, ace ACE) error {
+	// POSIX: ACEs are not supported in this abstraction. No-op.
+	return nil
 }

@@ -52,3 +52,9 @@ func (w *WindowsFilePermsOps) Chown(path string, owner string, group string) err
 	// allows callers to continue operating.
 	return nil
 }
+
+func (w *WindowsFilePermsOps) ApplyACE(path string, ace ACE) error {
+	// No-op default for simple WindowsFilePermsOps. Use WindowsACLFilePermsOps
+	// for icacls-based ACL modifications.
+	return nil
+}

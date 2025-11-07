@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/openpubkey/opkssh/policy"
@@ -146,6 +147,7 @@ func runPermissionsFix(dryRun bool, yes bool, verbose bool) error {
 		vfs = afero.NewOsFs()
 	}
 	ops := files.NewDefaultFilePermsOps(vfs)
+	aclVerifier := files.NewDefaultACLVerifier(vfs)
 
 	// Planning phase: determine actions without performing them
 	var planned []string
@@ -231,6 +233,36 @@ func runPermissionsFix(dryRun bool, yes bool, verbose bool) error {
 		errorsFound = append(errorsFound, "chown "+systemPolicy+": "+err.Error())
 	}
 
+	// Verify ACLs after changes and apply ACE fixes on Windows if needed
+	if runtime.GOOS == "windows" {
+		report, err := aclVerifier.VerifyACL(systemPolicy, files.ExpectedACL{Owner: "root", Mode: files.ModeSystemPerms})
+		if err != nil {
+			errorsFound = append(errorsFound, "acl verify: "+err.Error())
+		} else {
+			// Ensure Administrators and SYSTEM have full control; if missing, apply via ops.ApplyACE
+			needAdmin := true
+			needSystem := true
+			for _, a := range report.ACEs {
+				if a.Principal == "Administrators" && strings.Contains(a.Rights, "GENERIC_ALL") {
+					needAdmin = false
+				}
+				if a.Principal == "SYSTEM" && strings.Contains(a.Rights, "GENERIC_ALL") {
+					needSystem = false
+				}
+			}
+			if needAdmin {
+				if err := ops.ApplyACE(systemPolicy, files.ACE{Principal: "Administrators", Rights: "GENERIC_ALL", Type: "allow"}); err != nil {
+					errorsFound = append(errorsFound, "apply ACE Administrators:F: "+err.Error())
+				}
+			}
+			if needSystem {
+				if err := ops.ApplyACE(systemPolicy, files.ACE{Principal: "SYSTEM", Rights: "GENERIC_ALL", Type: "allow"}); err != nil {
+					errorsFound = append(errorsFound, "apply ACE SYSTEM:F: "+err.Error())
+				}
+			}
+		}
+	}
+
 	// Providers dir
 	if _, err := ops.Stat(providersDir); err != nil {
 		if err := ops.MkdirAllWithPerm(providersDir, 0750); err != nil {
@@ -257,6 +289,24 @@ func runPermissionsFix(dryRun bool, yes bool, verbose bool) error {
 				}
 				if err := ops.Chown(path, "root", ""); err != nil {
 					errorsFound = append(errorsFound, "chown "+path+": "+err.Error())
+				}
+				// On Windows, ensure ACLs for plugin files as well
+				if runtime.GOOS == "windows" {
+					if report, err := aclVerifier.VerifyACL(path, files.ExpectedACL{Owner: "root", Mode: files.ModeSystemPerms}); err == nil {
+						needAdmin := true
+						for _, a := range report.ACEs {
+							if a.Principal == "Administrators" && strings.Contains(a.Rights, "GENERIC_ALL") {
+								needAdmin = false
+							}
+						}
+						if needAdmin {
+							if err := ops.ApplyACE(path, files.ACE{Principal: "Administrators", Rights: "GENERIC_ALL", Type: "allow"}); err != nil {
+								errorsFound = append(errorsFound, "apply ACE Administrators:F for "+path+": "+err.Error())
+							}
+						}
+					} else {
+						errorsFound = append(errorsFound, "acl verify for "+path+": "+err.Error())
+					}
 				}
 			}
 		}
