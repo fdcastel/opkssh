@@ -142,6 +142,7 @@ func NewProviderFileLoader() *ProvidersFileLoader {
 		FileLoader: files.FileLoader{
 			Fs:           afero.NewOsFs(),
 			RequiredPerm: files.ModeSystemPerms,
+			Ops:          files.NewDefaultFilePermsOps(afero.NewOsFs()),
 		},
 	}
 }

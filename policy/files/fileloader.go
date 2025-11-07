@@ -30,6 +30,7 @@ import (
 type FileLoader struct {
 	Fs           afero.Fs
 	RequiredPerm fs.FileMode
+	Ops          FilePermsOps
 }
 
 // CreateIfDoesNotExist creates a file at the given path if it does not exist.
@@ -40,15 +41,18 @@ func (l FileLoader) CreateIfDoesNotExist(path string) error {
 	}
 	if !exists {
 		dirPath := filepath.Dir(path)
-		if err := l.Fs.MkdirAll(dirPath, 0750); err != nil {
+		if l.Ops == nil {
+			l.Ops = NewDefaultFilePermsOps(l.Fs)
+		}
+		if err := l.Ops.MkdirAllWithPerm(dirPath, 0750); err != nil {
 			return fmt.Errorf("failed to create directory: %w", err)
 		}
-		file, err := l.Fs.Create(path)
+		file, err := l.Ops.CreateFileWithPerm(path)
 		if err != nil {
 			return fmt.Errorf("failed to create file: %w", err)
 		}
 		file.Close()
-		if err := l.Fs.Chmod(path, l.RequiredPerm); err != nil {
+		if err := l.Ops.Chmod(path, l.RequiredPerm); err != nil {
 			return fmt.Errorf("failed to set file permissions: %w", err)
 		}
 	}
@@ -61,7 +65,10 @@ func (l FileLoader) CreateIfDoesNotExist(path string) error {
 // reading is successful; otherwise returns an error.
 func (l *FileLoader) LoadFileAtPath(path string) ([]byte, error) {
 	// Check if file exists and we can access it
-	if _, err := l.Fs.Stat(path); err != nil {
+	if l.Ops == nil {
+		l.Ops = NewDefaultFilePermsOps(l.Fs)
+	}
+	if _, err := l.Ops.Stat(path); err != nil {
 		return nil, fmt.Errorf("failed to describe the file at path: %w", err)
 	}
 
@@ -81,8 +88,11 @@ func (l *FileLoader) LoadFileAtPath(path string) ([]byte, error) {
 
 // Dump writes the bytes in fileBytes to the filepath
 func (l *FileLoader) Dump(fileBytes []byte, path string) error {
+	if l.Ops == nil {
+		l.Ops = NewDefaultFilePermsOps(l.Fs)
+	}
 	// Write to disk
-	if err := afero.WriteFile(l.Fs, path, fileBytes, l.RequiredPerm); err != nil {
+	if err := l.Ops.WriteFileWithPerm(path, fileBytes, l.RequiredPerm); err != nil {
 		return err
 	}
 	return nil

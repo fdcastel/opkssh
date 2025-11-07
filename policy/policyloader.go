@@ -95,6 +95,7 @@ func NewSystemPolicyLoader() *SystemPolicyLoader {
 			FileLoader: files.FileLoader{
 				Fs:           afero.NewOsFs(),
 				RequiredPerm: files.ModeSystemPerms,
+				Ops:          files.NewDefaultFilePermsOps(afero.NewOsFs()),
 			},
 			UserLookup: NewOsUserLookup(),
 		},
@@ -136,6 +137,7 @@ func NewHomePolicyLoader() *HomePolicyLoader {
 			FileLoader: files.FileLoader{
 				Fs:           afero.NewOsFs(),
 				RequiredPerm: files.ModeHomePerms,
+				Ops:          files.NewDefaultFilePermsOps(afero.NewOsFs()),
 			},
 			UserLookup: NewOsUserLookup(),
 		},

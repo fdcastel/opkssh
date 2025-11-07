@@ -53,6 +53,7 @@ func MockAddCmd(mockFs afero.Fs) *AddCmd {
 			FileLoader: files.FileLoader{
 				Fs:           mockFs,
 				RequiredPerm: files.ModeHomePerms,
+				Ops:          files.NewDefaultFilePermsOps(mockFs),
 			},
 			UserLookup: mockUserLookup,
 		},
@@ -63,6 +64,7 @@ func MockAddCmd(mockFs afero.Fs) *AddCmd {
 			FileLoader: files.FileLoader{
 				Fs:           mockFs,
 				RequiredPerm: files.ModeSystemPerms,
+				Ops:          files.NewDefaultFilePermsOps(mockFs),
 			},
 			UserLookup: mockUserLookup,
 		},

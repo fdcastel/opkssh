@@ -78,6 +78,7 @@ func NewTestHomePolicyLoader(fs afero.Fs, userLookup policy.UserLookup) *policy.
 			FileLoader: files.FileLoader{
 				Fs:           fs,
 				RequiredPerm: files.ModeHomePerms,
+				Ops:          files.NewDefaultFilePermsOps(fs),
 			},
 			UserLookup: userLookup,
 		},
@@ -90,6 +91,7 @@ func NewTestSystemPolicyLoader(fs afero.Fs, userLookup policy.UserLookup) *polic
 			FileLoader: files.FileLoader{
 				Fs:           fs,
 				RequiredPerm: files.ModeSystemPerms,
+				Ops:          files.NewDefaultFilePermsOps(fs),
 			},
 			UserLookup: userLookup,
 		},
