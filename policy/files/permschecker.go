@@ -22,7 +22,10 @@ package files
 import (
 	"fmt"
 	"io/fs"
+	"os/user"
+	"strconv"
 	"strings"
+	"syscall"
 )
 
 // CheckPerm checks the file at the given path if it has the desired permissions.
@@ -37,30 +40,62 @@ func (u *PermsChecker) CheckPerm(path string, requirePerm []fs.FileMode, require
 		return fmt.Errorf("failed to describe the file at path: %w", err)
 	}
 	mode := fileInfo.Mode()
-
-	// if the requiredOwner or requiredGroup are specified then run stat and check if they match
+	// if the requiredOwner or requiredGroup are specified then try to get owner/group
 	if requiredOwner != "" || requiredGroup != "" {
-		statOutput, err := u.CmdRunner("stat", "-c", "%U %G", path)
-		if err != nil {
-			return fmt.Errorf("failed to run stat: %w", err)
-		}
-
-		statOutputSplit := strings.Split(strings.TrimSpace(string(statOutput)), " ")
-		statOwner := statOutputSplit[0]
-		statGroup := statOutputSplit[1]
-		if len(statOutputSplit) != 2 {
-			return fmt.Errorf("expected stat command to return 2 values got %d", len(statOutputSplit))
-		}
-
-		if requiredOwner != "" {
-			if requiredOwner != statOwner {
-				return fmt.Errorf("expected owner (%s), got (%s)", requiredOwner, statOwner)
+		// Prefer using the underlying syscall.Stat_t information (no external stat call)
+		if statT, ok := fileInfo.Sys().(*syscall.Stat_t); ok {
+			// Lookup owner and group names from UIDs/GIDs
+			var statOwner string
+			var statGroup string
+			if requiredOwner != "" {
+				uidStr := strconv.FormatUint(uint64(statT.Uid), 10)
+				uobj, err := user.LookupId(uidStr)
+				if err != nil {
+					return fmt.Errorf("failed to lookup owner id %s: %w", uidStr, err)
+				}
+				statOwner = uobj.Username
+				if requiredOwner != statOwner {
+					return fmt.Errorf("expected owner (%s), got (%s)", requiredOwner, statOwner)
+				}
 			}
-		}
-		if requiredGroup != "" {
-			if requiredGroup != statGroup {
-				return fmt.Errorf("expected group (%s), got (%s)", requiredGroup, statGroup)
+			if requiredGroup != "" {
+				gidStr := strconv.FormatUint(uint64(statT.Gid), 10)
+				gobj, err := user.LookupGroupId(gidStr)
+				if err != nil {
+					return fmt.Errorf("failed to lookup group id %s: %w", gidStr, err)
+				}
+				statGroup = gobj.Name
+				if requiredGroup != statGroup {
+					return fmt.Errorf("expected group (%s), got (%s)", requiredGroup, statGroup)
+				}
 			}
+		} else if u.CmdRunner != nil {
+			// Fallback to using the external stat command if Sys() isn't available.
+			// This way existing unit tests that mock CmdRunner continue to work.
+			statOutput, err := u.CmdRunner("stat", "-c", "%U %G", path)
+			if err != nil {
+				return fmt.Errorf("failed to run stat: %w", err)
+			}
+
+			statOutputSplit := strings.Split(strings.TrimSpace(string(statOutput)), " ")
+			if len(statOutputSplit) != 2 {
+				return fmt.Errorf("expected stat command to return 2 values got %d", len(statOutputSplit))
+			}
+			statOwner := statOutputSplit[0]
+			statGroup := statOutputSplit[1]
+
+			if requiredOwner != "" {
+				if requiredOwner != statOwner {
+					return fmt.Errorf("expected owner (%s), got (%s)", requiredOwner, statOwner)
+				}
+			}
+			if requiredGroup != "" {
+				if requiredGroup != statGroup {
+					return fmt.Errorf("expected group (%s), got (%s)", requiredGroup, statGroup)
+				}
+			}
+		} else {
+			return fmt.Errorf("unable to determine owner/group for file: %s", path)
 		}
 	}
 
