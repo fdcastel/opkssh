@@ -130,13 +130,55 @@ func (w *WindowsACLFilePermsOps) Chown(path string, owner string, group string) 
 	return nil
 }
 
+// ResolveAccountToSID resolves an account name (e.g. "Administrators") to a
+// raw SID byte slice and returns the SID_NAME_USE (sidUse) value. Returns an
+// error if resolution fails.
+func ResolveAccountToSID(name string) ([]byte, uint32, error) {
+	if name == "" {
+		return nil, 0, fmt.Errorf("empty name")
+	}
+	pName, _ := syscall.UTF16PtrFromString(name)
+	var sidSize uint32
+	var domSize uint32
+	var sidUse uint32
+	// first call to determine sizes
+	r, _, _ := procLookupAccountName.Call(
+		0,
+		uintptr(unsafe.Pointer(pName)),
+		0,
+		uintptr(unsafe.Pointer(&sidSize)),
+		0,
+		uintptr(unsafe.Pointer(&domSize)),
+		uintptr(unsafe.Pointer(&sidUse)),
+	)
+	_ = r
+	if sidSize == 0 {
+		return nil, 0, fmt.Errorf("LookupAccountNameW: could not determine SID buffer size for %s", name)
+	}
+	sid := make([]byte, sidSize)
+	dom := make([]uint16, domSize)
+	ret, _, err := procLookupAccountName.Call(
+		0,
+		uintptr(unsafe.Pointer(pName)),
+		uintptr(unsafe.Pointer(&sid[0])),
+		uintptr(unsafe.Pointer(&sidSize)),
+		uintptr(unsafe.Pointer(&dom[0])),
+		uintptr(unsafe.Pointer(&domSize)),
+		uintptr(unsafe.Pointer(&sidUse)),
+	)
+	if ret == 0 {
+		return nil, 0, fmt.Errorf("LookupAccountNameW failed for %s: %v", name, err)
+	}
+	return sid, sidUse, nil
+}
+
 // EXPLICIT_ACCESS and TRUSTEE definitions for calling SetEntriesInAclW
 type _TRUSTEE struct {
 	MultipleTrustee         uintptr
 	MultipleTrusteeOperator uint32
 	TrusteeForm             uint32
 	TrusteeType             uint32
-	PtstrName               *uint16
+	PtstrName               unsafe.Pointer
 }
 
 type _EXPLICIT_ACCESS struct {
@@ -149,6 +191,7 @@ type _EXPLICIT_ACCESS struct {
 var (
 	procSetEntriesInAcl      = advapi32.NewProc("SetEntriesInAclW")
 	procSetNamedSecurityInfo = advapi32.NewProc("SetNamedSecurityInfoW")
+	procLookupAccountName    = advapi32.NewProc("LookupAccountNameW")
 )
 
 const (
@@ -156,8 +199,48 @@ const (
 	GRANT_ACCESS       = 1
 	NO_INHERITANCE     = 0
 	TRUSTEE_IS_NAME    = 1
+	TRUSTEE_IS_SID     = 0
 	TRUSTEE_IS_UNKNOWN = 0
 )
+
+// Trustee type constants (match SID_NAME_USE values where appropriate)
+const (
+	TRUSTEE_TYPE_UNKNOWN          = 0
+	TRUSTEE_TYPE_USER             = 1
+	TRUSTEE_TYPE_GROUP            = 2
+	TRUSTEE_TYPE_DOMAIN           = 3
+	TRUSTEE_TYPE_ALIAS            = 4
+	TRUSTEE_TYPE_WELL_KNOWN_GROUP = 5
+	TRUSTEE_TYPE_DELETED          = 6
+	TRUSTEE_TYPE_INVALID          = 7
+	TRUSTEE_TYPE_COMPUTER         = 8
+	TRUSTEE_TYPE_LABEL            = 9
+)
+
+func sidUseToTrusteeType(sidUse uint32) uint32 {
+	switch sidUse {
+	case 1:
+		return TRUSTEE_TYPE_USER
+	case 2:
+		return TRUSTEE_TYPE_GROUP
+	case 3:
+		return TRUSTEE_TYPE_DOMAIN
+	case 4:
+		return TRUSTEE_TYPE_ALIAS
+	case 5:
+		return TRUSTEE_TYPE_WELL_KNOWN_GROUP
+	case 6:
+		return TRUSTEE_TYPE_DELETED
+	case 7:
+		return TRUSTEE_TYPE_INVALID
+	case 8:
+		return TRUSTEE_TYPE_COMPUTER
+	case 9:
+		return TRUSTEE_TYPE_LABEL
+	default:
+		return TRUSTEE_TYPE_UNKNOWN
+	}
+}
 
 // rightsToMask converts a human-readable rights string into a Windows access mask.
 func rightsToMask(rights string) uint32 {
@@ -231,13 +314,71 @@ func (w *WindowsACLFilePermsOps) ApplyACE(path string, ace ACE) error {
 	}
 	ea.GrfInheritance = NO_INHERITANCE
 
-	namePtr, _ := syscall.UTF16PtrFromString(ace.Principal)
-	ea.Trustee = _TRUSTEE{
-		MultipleTrustee:         0,
-		MultipleTrusteeOperator: 0,
-		TrusteeForm:             TRUSTEE_IS_NAME,
-		TrusteeType:             TRUSTEE_IS_UNKNOWN,
-		PtstrName:               namePtr,
+	// Prefer using provided SID if available
+	if len(ace.PrincipalSID) > 0 {
+		ea.Trustee = _TRUSTEE{
+			MultipleTrustee:         0,
+			MultipleTrusteeOperator: 0,
+			TrusteeForm:             TRUSTEE_IS_SID,
+			TrusteeType:             TRUSTEE_TYPE_UNKNOWN,
+			PtstrName:               unsafe.Pointer(&ace.PrincipalSID[0]),
+		}
+	} else {
+		// Attempt to resolve account name to SID and use TRUSTEE_IS_SID if possible
+		pName, _ := syscall.UTF16PtrFromString(ace.Principal)
+		var sidSize uint32
+		var domSize uint32
+		var sidUse uint32
+		// first call to determine sizes
+		procLookupAccountName.Call(
+			0,
+			uintptr(unsafe.Pointer(pName)),
+			0,
+			uintptr(unsafe.Pointer(&sidSize)),
+			0,
+			uintptr(unsafe.Pointer(&domSize)),
+			uintptr(unsafe.Pointer(&sidUse)),
+		)
+		if sidSize != 0 {
+			sid := make([]byte, sidSize)
+			dom := make([]uint16, domSize)
+			ret, _, _ := procLookupAccountName.Call(
+				0,
+				uintptr(unsafe.Pointer(pName)),
+				uintptr(unsafe.Pointer(&sid[0])),
+				uintptr(unsafe.Pointer(&sidSize)),
+				uintptr(unsafe.Pointer(&dom[0])),
+				uintptr(unsafe.Pointer(&domSize)),
+				uintptr(unsafe.Pointer(&sidUse)),
+			)
+			if ret != 0 {
+				ea.Trustee = _TRUSTEE{
+					MultipleTrustee:         0,
+					MultipleTrusteeOperator: 0,
+					TrusteeForm:             TRUSTEE_IS_SID,
+					TrusteeType:             sidUseToTrusteeType(sidUse),
+					PtstrName:               unsafe.Pointer(&sid[0]),
+				}
+			} else {
+				// fallback to name
+				ea.Trustee = _TRUSTEE{
+					MultipleTrustee:         0,
+					MultipleTrusteeOperator: 0,
+					TrusteeForm:             TRUSTEE_IS_NAME,
+					TrusteeType:             TRUSTEE_TYPE_UNKNOWN,
+					PtstrName:               unsafe.Pointer(pName),
+				}
+			}
+		} else {
+			// fallback: use name
+			ea.Trustee = _TRUSTEE{
+				MultipleTrustee:         0,
+				MultipleTrusteeOperator: 0,
+				TrusteeForm:             TRUSTEE_IS_NAME,
+				TrusteeType:             TRUSTEE_TYPE_UNKNOWN,
+				PtstrName:               unsafe.Pointer(pName),
+			}
+		}
 	}
 
 	// Call SetEntriesInAclW

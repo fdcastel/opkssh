@@ -235,6 +235,10 @@ func runPermissionsFix(dryRun bool, yes bool, verbose bool) error {
 
 	// Verify ACLs after changes and apply ACE fixes on Windows if needed
 	if runtime.GOOS == "windows" {
+		// Pre-resolve commonly used SIDs to avoid repeated lookups and use SID-based trustees
+		adminSID, _, _ := files.ResolveAccountToSID("Administrators")
+		systemSID, _, _ := files.ResolveAccountToSID("SYSTEM")
+
 		report, err := aclVerifier.VerifyACL(systemPolicy, files.ExpectedACL{Owner: "root", Mode: files.ModeSystemPerms})
 		if err != nil {
 			errorsFound = append(errorsFound, "acl verify: "+err.Error())
@@ -251,12 +255,20 @@ func runPermissionsFix(dryRun bool, yes bool, verbose bool) error {
 				}
 			}
 			if needAdmin {
-				if err := ops.ApplyACE(systemPolicy, files.ACE{Principal: "Administrators", Rights: "GENERIC_ALL", Type: "allow"}); err != nil {
+				ace := files.ACE{Principal: "Administrators", Rights: "GENERIC_ALL", Type: "allow"}
+				if len(adminSID) > 0 {
+					ace.PrincipalSID = adminSID
+				}
+				if err := ops.ApplyACE(systemPolicy, ace); err != nil {
 					errorsFound = append(errorsFound, "apply ACE Administrators:F: "+err.Error())
 				}
 			}
 			if needSystem {
-				if err := ops.ApplyACE(systemPolicy, files.ACE{Principal: "SYSTEM", Rights: "GENERIC_ALL", Type: "allow"}); err != nil {
+				ace := files.ACE{Principal: "SYSTEM", Rights: "GENERIC_ALL", Type: "allow"}
+				if len(systemSID) > 0 {
+					ace.PrincipalSID = systemSID
+				}
+				if err := ops.ApplyACE(systemPolicy, ace); err != nil {
 					errorsFound = append(errorsFound, "apply ACE SYSTEM:F: "+err.Error())
 				}
 			}
@@ -300,7 +312,11 @@ func runPermissionsFix(dryRun bool, yes bool, verbose bool) error {
 							}
 						}
 						if needAdmin {
-							if err := ops.ApplyACE(path, files.ACE{Principal: "Administrators", Rights: "GENERIC_ALL", Type: "allow"}); err != nil {
+							ace := files.ACE{Principal: "Administrators", Rights: "GENERIC_ALL", Type: "allow"}
+							if adminSID, _, _ := files.ResolveAccountToSID("Administrators"); len(adminSID) > 0 {
+								ace.PrincipalSID = adminSID
+							}
+							if err := ops.ApplyACE(path, ace); err != nil {
 								errorsFound = append(errorsFound, "apply ACE Administrators:F for "+path+": "+err.Error())
 							}
 						}

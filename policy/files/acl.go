@@ -7,9 +7,13 @@ import (
 // ACE represents an access control entry (platform-agnostic minimal view)
 type ACE struct {
 	Principal string
-	Rights    string
-	Type      string // Allow or Deny
-	Inherited bool
+	// PrincipalSID if present contains the raw SID bytes to use when applying
+	// the ACE on Windows. When non-nil, implementations should prefer the SID
+	// form of TRUSTEE to avoid name-resolution ambiguity.
+	PrincipalSID []byte
+	Rights       string
+	Type         string // Allow or Deny
+	Inherited    bool
 }
 
 // ExpectedACL contains the expectations for a path's ownership/ACL
