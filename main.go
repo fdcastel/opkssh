@@ -392,6 +392,9 @@ Arguments:
 
 	rootCmd.AddCommand(clientCmd)
 
+	// permissions subcommand (check/fix)
+	rootCmd.AddCommand(commands.NewPermissionsCmd())
+
 	// genDocsCmd is a hidden command used as a helper for generating our
 	// command line reference documentation.
 	genDocsCmd := &cobra.Command{

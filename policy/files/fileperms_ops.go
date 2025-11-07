@@ -29,6 +29,10 @@ type OsFilePermsOps struct {
 }
 
 func NewDefaultFilePermsOps(fs afero.Fs) FilePermsOps {
+	if runtime.GOOS == "windows" {
+		// Prefer ACL-capable implementation on Windows
+		return NewWindowsACLFilePermsOps(fs)
+	}
 	return &OsFilePermsOps{Fs: fs}
 }
 
