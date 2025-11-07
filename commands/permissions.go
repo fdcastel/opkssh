@@ -33,6 +33,11 @@ var ConfirmPrompt = func(prompt string) (bool, error) {
 	return s == "y" || s == "yes", nil
 }
 
+// IsElevatedFunc is a testable indirection for elevation checks. By default
+// it points to the platform-specific IsElevated implementation but tests may
+// override it.
+var IsElevatedFunc = IsElevated
+
 // NewPermissionsCmd returns the permissions parent command with subcommands
 func NewPermissionsCmd() *cobra.Command {
 	permissionsCmd := &cobra.Command{
@@ -157,6 +162,12 @@ func runPermissionsFix(dryRun bool, yes bool, verbose bool) error {
 	ops := files.NewDefaultFilePermsOps(vfs)
 	aclVerifier := files.NewDefaultACLVerifier(vfs)
 
+	return runPermissionsFixWithDeps(ops, aclVerifier, vfs, dryRun, yes, verbose)
+}
+
+// runPermissionsFixWithDeps is the dependency-injectable core of runPermissionsFix
+// so unit tests can provide mocks for FilePermsOps and ACLVerifier.
+func runPermissionsFixWithDeps(ops files.FilePermsOps, aclVerifier files.ACLVerifier, vfs afero.Fs, dryRun bool, yes bool, verbose bool) error {
 	// Planning phase: determine actions without performing them
 	var planned []string
 
@@ -199,7 +210,7 @@ func runPermissionsFix(dryRun bool, yes bool, verbose bool) error {
 	}
 
 	// Require elevated privileges to perform fixes
-	elevated, err := IsElevated()
+	elevated, err := IsElevatedFunc()
 	if err != nil {
 		return fmt.Errorf("failed to determine elevation: %w", err)
 	}
