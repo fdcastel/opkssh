@@ -1,8 +1,10 @@
 package commands
 
 import (
+	"bufio"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -16,6 +18,19 @@ import (
 // DefaultFs can be set by tests to use an in-memory filesystem. If nil,
 // the commands will use the real OS filesystem.
 var DefaultFs afero.Fs
+
+// ConfirmPrompt is used to ask the user for confirmation before applying fixes.
+// Tests can override this to avoid interactive prompts.
+var ConfirmPrompt = func(prompt string) (bool, error) {
+	fmt.Print(prompt)
+	r := bufio.NewReader(os.Stdin)
+	s, err := r.ReadString('\n')
+	if err != nil {
+		return false, err
+	}
+	s = strings.TrimSpace(strings.ToLower(s))
+	return s == "y" || s == "yes", nil
+}
 
 // NewPermissionsCmd returns the permissions parent command with subcommands
 func NewPermissionsCmd() *cobra.Command {
@@ -109,93 +124,126 @@ func runPermissionsCheck() error {
 
 // runPermissionsFix attempts to repair permissions/ownership for key paths.
 func runPermissionsFix(dryRun bool, yes bool, verbose bool) error {
-	vfs := afero.NewOsFs()
+	vfs := DefaultFs
+	if vfs == nil {
+		vfs = afero.NewOsFs()
+	}
 	ops := files.NewDefaultFilePermsOps(vfs)
 
-	var actions []string
-	var errorsFound []string
+	// Planning phase: determine actions without performing them
+	var planned []string
 
 	systemPolicy := policy.SystemDefaultPolicyPath
-	// Ensure system policy exists
 	if _, err := ops.Stat(systemPolicy); err != nil {
-		actions = append(actions, "create file: "+systemPolicy)
-		if !dryRun {
-			if f, err := ops.CreateFileWithPerm(systemPolicy); err != nil {
-				errorsFound = append(errorsFound, "create "+systemPolicy+": "+err.Error())
-			} else {
-				f.Close()
-			}
-		}
+		planned = append(planned, "create file: "+systemPolicy)
 	}
-	// Set permissions and ownership
-	if verbose || dryRun {
-		actions = append(actions, "chmod "+systemPolicy+" to "+files.ModeSystemPerms.String())
-		actions = append(actions, "chown "+systemPolicy+" to root:opksshuser")
-	}
-	if !dryRun {
-		if err := ops.Chmod(systemPolicy, files.ModeSystemPerms); err != nil {
-			errorsFound = append(errorsFound, "chmod "+systemPolicy+": "+err.Error())
-		}
-		if err := ops.Chown(systemPolicy, "root", "opksshuser"); err != nil {
-			errorsFound = append(errorsFound, "chown "+systemPolicy+": "+err.Error())
-		}
-	}
+	planned = append(planned, "chmod "+systemPolicy+" to "+files.ModeSystemPerms.String())
+	planned = append(planned, "chown "+systemPolicy+" to root:opksshuser")
 
-	// Providers dir
 	providersDir := filepath.Join(policy.GetSystemConfigBasePath(), "providers")
 	if _, err := ops.Stat(providersDir); err != nil {
-		actions = append(actions, "mkdir "+providersDir)
-		if !dryRun {
-			if err := ops.MkdirAllWithPerm(providersDir, 0750); err != nil {
-				errorsFound = append(errorsFound, "mkdir "+providersDir+": "+err.Error())
-			}
-		}
+		planned = append(planned, "mkdir "+providersDir)
 	}
-	if !dryRun {
-		if err := ops.Chown(providersDir, "root", ""); err != nil {
-			errorsFound = append(errorsFound, "chown "+providersDir+": "+err.Error())
-		}
-	}
+	planned = append(planned, "chown "+providersDir+" to root")
 
-	// Plugins dir
 	pluginsDir := filepath.Join(policy.GetSystemConfigBasePath(), "policy.d")
 	if _, err := ops.Stat(pluginsDir); err != nil {
-		actions = append(actions, "mkdir "+pluginsDir)
-		if !dryRun {
-			if err := ops.MkdirAllWithPerm(pluginsDir, 0750); err != nil {
-				errorsFound = append(errorsFound, "mkdir "+pluginsDir+": "+err.Error())
-			}
-		}
+		planned = append(planned, "mkdir "+pluginsDir)
 	}
-	// Fix files in plugins dir
+	// include plugin files if present
 	if fi, err := vfs.Open(pluginsDir); err == nil {
 		entries, _ := fi.Readdir(-1)
 		for _, e := range entries {
 			if !e.IsDir() && strings.HasSuffix(e.Name(), ".yml") {
-				path := filepath.Join(pluginsDir, e.Name())
-				actions = append(actions, "chmod "+path+" to 0640")
-				if !dryRun {
-					if err := ops.Chmod(path, files.ModeSystemPerms); err != nil {
-						errorsFound = append(errorsFound, "chmod "+path+": "+err.Error())
-					}
-					if err := ops.Chown(path, "root", ""); err != nil {
-						errorsFound = append(errorsFound, "chown "+path+": "+err.Error())
-					}
-				}
+				planned = append(planned, "chmod "+filepath.Join(pluginsDir, e.Name())+" to 0640")
+				planned = append(planned, "chown "+filepath.Join(pluginsDir, e.Name())+" to root")
 			}
 		}
 		fi.Close()
 	}
 
-	// Note: log file repair is not implemented here to avoid cross-package
-	// dependency on main.GetLogFilePath. Installer should ensure log file ACLs
-	// or use a separate helper.
-
-	// Report actions
-	if dryRun || verbose {
-		for _, a := range actions {
+	// If dry-run, just print planned actions
+	if dryRun {
+		for _, a := range planned {
 			fmt.Println("Action:", a)
 		}
+		fmt.Println("dry-run complete")
+		return nil
+	}
+
+	// Require elevated privileges to perform fixes
+	elevated, err := IsElevated()
+	if err != nil {
+		return fmt.Errorf("failed to determine elevation: %w", err)
+	}
+	if !elevated {
+		return fmt.Errorf("fix requires elevated privileges (run as root or Administrator)")
+	}
+
+	// Confirm with user unless --yes
+	if !yes {
+		// show planned actions and ask
+		fmt.Println("Planned actions:")
+		for _, a := range planned {
+			fmt.Println("  -", a)
+		}
+		ok, err := ConfirmPrompt("Apply these changes? [y/N]: ")
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("aborted by user")
+		}
+	}
+
+	// Execution phase: perform actions
+	var errorsFound []string
+
+	// Create system policy file if missing
+	if _, err := ops.Stat(systemPolicy); err != nil {
+		if f, err := ops.CreateFileWithPerm(systemPolicy); err != nil {
+			errorsFound = append(errorsFound, "create "+systemPolicy+": "+err.Error())
+		} else {
+			f.Close()
+		}
+	}
+	if err := ops.Chmod(systemPolicy, files.ModeSystemPerms); err != nil {
+		errorsFound = append(errorsFound, "chmod "+systemPolicy+": "+err.Error())
+	}
+	if err := ops.Chown(systemPolicy, "root", "opksshuser"); err != nil {
+		errorsFound = append(errorsFound, "chown "+systemPolicy+": "+err.Error())
+	}
+
+	// Providers dir
+	if _, err := ops.Stat(providersDir); err != nil {
+		if err := ops.MkdirAllWithPerm(providersDir, 0750); err != nil {
+			errorsFound = append(errorsFound, "mkdir "+providersDir+": "+err.Error())
+		}
+	}
+	if err := ops.Chown(providersDir, "root", ""); err != nil {
+		errorsFound = append(errorsFound, "chown "+providersDir+": "+err.Error())
+	}
+
+	// Plugins dir
+	if _, err := ops.Stat(pluginsDir); err != nil {
+		if err := ops.MkdirAllWithPerm(pluginsDir, 0750); err != nil {
+			errorsFound = append(errorsFound, "mkdir "+pluginsDir+": "+err.Error())
+		}
+	}
+	if fi, err := vfs.Open(pluginsDir); err == nil {
+		entries, _ := fi.Readdir(-1)
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".yml") {
+				path := filepath.Join(pluginsDir, e.Name())
+				if err := ops.Chmod(path, files.ModeSystemPerms); err != nil {
+					errorsFound = append(errorsFound, "chmod "+path+": "+err.Error())
+				}
+				if err := ops.Chown(path, "root", ""); err != nil {
+					errorsFound = append(errorsFound, "chown "+path+": "+err.Error())
+				}
+			}
+		}
+		fi.Close()
 	}
 
 	if len(errorsFound) > 0 {
