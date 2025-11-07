@@ -35,12 +35,22 @@ const ModeHomePerms = fs.FileMode(0600)
 
 // PermsChecker contains methods to check the ownership, group
 // and file permissions of a file on a Unix-like system (or Windows).
+// PermsCheckerInterface defines the behavior needed to verify file
+// permissions and ownership. Implementations are platform-specific.
+type PermsCheckerInterface interface {
+	CheckPerm(path string, requirePerm []fs.FileMode, requiredOwner string, requiredGroup string) error
+}
+
+// PermsChecker contains methods to check the ownership, group
+// and file permissions of a file on a Unix-like system (or Windows).
 type PermsChecker struct {
 	Fs        afero.Fs
 	CmdRunner func(string, ...string) ([]byte, error)
 }
 
-func NewPermsChecker(fs afero.Fs) *PermsChecker {
+// NewPermsChecker returns a platform-specific PermsChecker implementation.
+// The concrete type returned implements PermsCheckerInterface.
+func NewPermsChecker(fs afero.Fs) PermsCheckerInterface {
 	return &PermsChecker{Fs: fs, CmdRunner: ExecCmd}
 }
 

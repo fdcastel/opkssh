@@ -44,7 +44,7 @@ func TestLoadPolicyPluginsMissing(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	enforcer := &PolicyPluginEnforcer{
 		Fs: mockFs,
-		permChecker: files.PermsChecker{
+		permChecker: &files.PermsChecker{
 			Fs: mockFs,
 			CmdRunner: func(name string, arg ...string) ([]byte, error) {
 				return []byte("root" + " " + "group"), nil
@@ -134,7 +134,7 @@ invalid_field: true
 
 			enforcer := &PolicyPluginEnforcer{
 				Fs: mockFs,
-				permChecker: files.PermsChecker{
+				permChecker: &files.PermsChecker{
 					Fs: mockFs,
 					CmdRunner: func(name string, arg ...string) ([]byte, error) {
 						return []byte("root" + " " + "group"), nil
@@ -387,7 +387,7 @@ command: /usr/bin/local/opk/bad-perms-policy-cmd`}}
 			enforcer := &PolicyPluginEnforcer{
 				Fs:          mockFs,
 				cmdExecutor: tt.cmdExecutor,
-				permChecker: files.PermsChecker{
+				permChecker: &files.PermsChecker{
 					Fs: mockFs,
 					CmdRunner: func(name string, arg ...string) ([]byte, error) {
 						return []byte("root" + " " + "group"), nil
@@ -442,7 +442,7 @@ func TestPluginUnsetsEnvVar(t *testing.T) {
 			require.Equal(t, issValue, "https://example.com")
 			return []byte("allow"), nil
 		},
-		permChecker: files.PermsChecker{
+		permChecker: &files.PermsChecker{
 			Fs: mockFs,
 			CmdRunner: func(name string, arg ...string) ([]byte, error) {
 				return []byte("root" + " " + "group"), nil
@@ -477,7 +477,7 @@ func TestPublicCheckPolicy(t *testing.T) {
 			require.True(t, okIss, "OPKSSH_PLUGIN_ISS should still be set before calling the command")
 			return []byte("allow"), nil
 		},
-		permChecker: files.PermsChecker{
+		permChecker: &files.PermsChecker{
 			Fs: mockFs,
 			CmdRunner: func(name string, arg ...string) ([]byte, error) {
 				return []byte("root" + " " + "group"), nil

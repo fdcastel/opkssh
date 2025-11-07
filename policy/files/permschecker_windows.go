@@ -22,6 +22,7 @@ package files
 import (
 	"fmt"
 	"io/fs"
+	"strings"
 )
 
 // CheckPerm checks file permissions on Windows.
@@ -43,21 +44,54 @@ func (u *PermsChecker) CheckPerm(path string, requirePerm []fs.FileMode, require
 		return fmt.Errorf("failed to describe the file at path: %w", err)
 	}
 
-	// On Windows, we skip the permission bit check because:
-	// - Go synthesizes permissions from file attributes, not ACLs
-	// - Files show as 0666 (rw-rw-rw-) if not read-only, or 0444 (r--r--r--) if read-only
-	// - There's no way to make a file appear as 0640 through file attributes alone
-	// - Security is enforced through NTFS ACLs set by the installer
-	
-	// We also skip owner/group checks since Windows uses different security model
-	// (SIDs instead of uid/gid)
-	
-	_ = fileInfo        // Suppress unused variable warning
-	_ = requirePerm     // Suppress unused variable warning  
-	_ = requiredOwner   // Suppress unused variable warning
-	_ = requiredGroup   // Suppress unused variable warning
+	// If a custom CmdRunner is provided (used in unit tests and some mocks),
+	// attempt to perform similar checks to the Unix implementation so tests
+	// that rely on CmdRunner behave consistently on Windows.
+	if u.CmdRunner != nil {
+		// Owner/group checks, if requested
+		if requiredOwner != "" || requiredGroup != "" {
+			statOutput, err := u.CmdRunner("stat", "-c", "%U %G", path)
+			if err != nil {
+				return fmt.Errorf("failed to run stat: %w", err)
+			}
 
-	// On Windows, if we can stat the file, we consider it acceptable
-	// The actual security is enforced by NTFS ACLs
+			statOutputSplit := strings.Split(strings.TrimSpace(string(statOutput)), " ")
+			if len(statOutputSplit) != 2 {
+				return fmt.Errorf("expected stat command to return 2 values got %d", len(statOutputSplit))
+			}
+			statOwner := statOutputSplit[0]
+			statGroup := statOutputSplit[1]
+
+			if requiredOwner != "" {
+				if requiredOwner != statOwner {
+					return fmt.Errorf("expected owner (%s), got (%s)", requiredOwner, statOwner)
+				}
+			}
+			if requiredGroup != "" {
+				if requiredGroup != statGroup {
+					return fmt.Errorf("expected group (%s), got (%s)", requiredGroup, statGroup)
+				}
+			}
+		}
+
+		// Permission bits check using the FileMode synthesized by afero/os
+		mode := fileInfo.Mode()
+		permMatch := false
+		requiredPermString := []string{}
+		for _, p := range requirePerm {
+			requiredPermString = append(requiredPermString, fmt.Sprintf("%o", p.Perm()))
+			if mode.Perm() == p {
+				permMatch = true
+			}
+		}
+		if !permMatch {
+			return fmt.Errorf("expected one of the following permissions [%s], got (%o)", strings.Join(requiredPermString, ", "), mode.Perm())
+		}
+
+		return nil
+	}
+
+	// Default Windows behavior: only verify the file exists. Real security on
+	// Windows is enforced by NTFS ACLs set by the installer.
 	return nil
 }

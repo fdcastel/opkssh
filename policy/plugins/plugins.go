@@ -88,7 +88,7 @@ func DefaultCmdExecutor(name string, arg ...string) ([]byte, error) {
 type PolicyPluginEnforcer struct {
 	Fs          afero.Fs
 	cmdExecutor CmdExecutor // This lets us mock command exec in unit tests
-	permChecker files.PermsChecker
+	permChecker files.PermsCheckerInterface
 }
 
 func NewPolicyPluginEnforcer() *PolicyPluginEnforcer {
@@ -96,10 +96,7 @@ func NewPolicyPluginEnforcer() *PolicyPluginEnforcer {
 	return &PolicyPluginEnforcer{
 		Fs:          fs,
 		cmdExecutor: DefaultCmdExecutor,
-		permChecker: files.PermsChecker{
-			Fs:        fs,
-			CmdRunner: files.ExecCmd,
-		},
+		permChecker: files.NewPermsChecker(fs),
 	}
 }
 
