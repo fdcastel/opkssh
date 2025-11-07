@@ -99,11 +99,19 @@ func runPermissionsCheck() error {
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("%s: acl verify error: %v", systemPolicy, err))
 		} else {
-			fmt.Printf("%s: owner=%s mode=%o\n", systemPolicy, report.Owner, report.Mode)
+			if report.OwnerSIDStr != "" {
+				fmt.Printf("%s: owner=%s ownerSID=%s mode=%o\n", systemPolicy, report.Owner, report.OwnerSIDStr, report.Mode)
+			} else {
+				fmt.Printf("%s: owner=%s mode=%o\n", systemPolicy, report.Owner, report.Mode)
+			}
 			if len(report.ACEs) > 0 {
 				fmt.Println("  ACEs:")
 				for _, a := range report.ACEs {
-					fmt.Printf("    - %s: %s (%s) inherited=%v\n", a.Principal, a.Type, a.Rights, a.Inherited)
+					if a.PrincipalSIDStr != "" {
+						fmt.Printf("    - %s [%s]: %s (%s) inherited=%v\n", a.Principal, a.PrincipalSIDStr, a.Type, a.Rights, a.Inherited)
+					} else {
+						fmt.Printf("    - %s: %s (%s) inherited=%v\n", a.Principal, a.Type, a.Rights, a.Inherited)
+					}
 				}
 			}
 			for _, p := range report.Problems {

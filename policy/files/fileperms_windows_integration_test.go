@@ -4,7 +4,9 @@
 package files_test
 
 import (
+	"bytes"
 	"os"
+	"os/user"
 	"path/filepath"
 	"testing"
 
@@ -82,6 +84,34 @@ func TestApplyAndVerifyACE_WindowsIntegration(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected to find an ACE with GENERIC_READ/GENERIC_ALL, got: %+v", report.ACEs)
+	}
+
+	// Assert owner SID matches current user SID
+	if len(report.OwnerSID) == 0 {
+		t.Fatalf("expected OwnerSID in report, got none")
+	}
+	cu, err := user.Current()
+	if err != nil {
+		t.Fatalf("user.Current failed: %v", err)
+	}
+	// Try resolving username as-is, then fall back to the short name after '\' if present
+	expectedSID, _, err := files.ResolveAccountToSID(cu.Username)
+	if err != nil {
+		// try fallback after splitting domain\user
+		uname := cu.Username
+		if idx := bytes.LastIndexByte([]byte(uname), '\\'); idx != -1 {
+			short := uname[idx+1:]
+			expectedSID, _, err = files.ResolveAccountToSID(string(short))
+		}
+	}
+	if err != nil {
+		t.Logf("could not resolve current user to SID: %v", err)
+	} else {
+		if !bytes.Equal(expectedSID, report.OwnerSID) {
+			es, _ := files.ConvertSidToString(expectedSID)
+			rs, _ := files.ConvertSidToString(report.OwnerSID)
+			t.Fatalf("owner SID mismatch: expected %v (%s) got %v (%s)", expectedSID, es, report.OwnerSID, rs)
+		}
 	}
 }
 

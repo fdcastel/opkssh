@@ -164,6 +164,9 @@ func (w *WindowsACLVerifier) VerifyACL(path string, expected ExpectedACL) (ACLRe
 				ownerSidBytes[i] = *(*byte)(unsafe.Pointer(pOwner + uintptr(i)))
 			}
 			r.OwnerSID = ownerSidBytes
+			if s, err := ConvertSidToString(ownerSidBytes); err == nil {
+				r.OwnerSIDStr = s
+			}
 		}
 
 		var nameLen uint32
@@ -286,9 +289,10 @@ func (w *WindowsACLVerifier) VerifyACL(path string, expected ExpectedACL) (ACLRe
 
 				rights := maskToRights(mask)
 				ace := ACE{
-					Principal:    principal,
-					PrincipalSID: sidBytes,
-					Rights:       rights,
+					Principal:       principal,
+					PrincipalSID:    sidBytes,
+					PrincipalSIDStr: "",
+					Rights:          rights,
 					Type: func() string {
 						if aceType == ACCESS_ALLOWED_ACE_TYPE {
 							return "allow"
@@ -299,6 +303,13 @@ func (w *WindowsACLVerifier) VerifyACL(path string, expected ExpectedACL) (ACLRe
 						return fmt.Sprintf("type-%d", aceType)
 					}(),
 					Inherited: (aceFlags & INHERITED_ACE) != 0,
+				}
+
+				// Convert SID bytes to textual SID for easier assertions/logging
+				if len(sidBytes) > 0 {
+					if s, err := ConvertSidToString(sidBytes); err == nil {
+						ace.PrincipalSIDStr = s
+					}
 				}
 				r.ACEs = append(r.ACEs, ace)
 			}

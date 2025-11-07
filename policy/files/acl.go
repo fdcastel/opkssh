@@ -12,8 +12,10 @@ type ACE struct {
 	// form of TRUSTEE to avoid name-resolution ambiguity.
 	PrincipalSID []byte
 	Rights       string
-	Type         string // Allow or Deny
-	Inherited    bool
+	// PrincipalSIDStr contains the textual SID (S-1-5-...) when available.
+	PrincipalSIDStr string
+	Type            string // Allow or Deny
+	Inherited       bool
 }
 
 // ExpectedACL contains the expectations for a path's ownership/ACL
@@ -30,9 +32,11 @@ type ACLReport struct {
 	// OwnerSID contains the raw owner SID bytes on Windows when available.
 	// On non-Windows platforms this will be nil.
 	OwnerSID []byte
-	Mode     fs.FileMode
-	ACEs     []ACE
-	Problems []string
+	// OwnerSIDStr is the textual SID value (S-1-5-...) when available.
+	OwnerSIDStr string
+	Mode        fs.FileMode
+	ACEs        []ACE
+	Problems    []string
 }
 
 // ACLVerifier verifies ACLs and ownership for a given path against expectations.
