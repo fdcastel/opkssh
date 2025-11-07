@@ -24,9 +24,12 @@ type ExpectedACL struct {
 
 // ACLReport is the structured result from verifying ACLs/ownership for a path
 type ACLReport struct {
-	Path     string
-	Exists   bool
-	Owner    string
+	Path   string
+	Exists bool
+	Owner  string
+	// OwnerSID contains the raw owner SID bytes on Windows when available.
+	// On non-Windows platforms this will be nil.
+	OwnerSID []byte
 	Mode     fs.FileMode
 	ACEs     []ACE
 	Problems []string

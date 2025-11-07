@@ -81,6 +81,7 @@ var (
 	advapi32              = syscall.NewLazyDLL("advapi32.dll")
 	procGetNamedSecInfo   = advapi32.NewProc("GetNamedSecurityInfoW")
 	procLookupAccountSid  = advapi32.NewProc("LookupAccountSidW")
+	procGetLengthSid      = advapi32.NewProc("GetLengthSid")
 	procGetAclInformation = advapi32.NewProc("GetAclInformation")
 	procGetAce            = advapi32.NewProc("GetAce")
 	kernel32              = syscall.NewLazyDLL("kernel32.dll")
@@ -154,6 +155,17 @@ func (w *WindowsACLVerifier) VerifyACL(path string, expected ExpectedACL) (ACLRe
 
 	// Lookup owner name if available
 	if pOwner != 0 {
+		// Copy owner SID raw bytes into report for precise assertions
+		ownerSidLenRet, _, _ := procGetLengthSid.Call(pOwner)
+		if ownerSidLenRet != 0 {
+			ownerSidLen := int(ownerSidLenRet)
+			ownerSidBytes := make([]byte, ownerSidLen)
+			for i := 0; i < ownerSidLen; i++ {
+				ownerSidBytes[i] = *(*byte)(unsafe.Pointer(pOwner + uintptr(i)))
+			}
+			r.OwnerSID = ownerSidBytes
+		}
+
 		var nameLen uint32
 		var domLen uint32
 		var sidUse uint32
@@ -259,10 +271,24 @@ func (w *WindowsACLVerifier) VerifyACL(path string, expected ExpectedACL) (ACLRe
 					}
 				}
 
+				// Copy SID bytes so callers/tests can assert exact SIDs
+				var sidBytes []byte
+				// GetLengthSid returns the size of the SID in bytes
+				sidLenRet, _, _ := procGetLengthSid.Call(sidPtr)
+				if sidLenRet != 0 {
+					sidLen := int(sidLenRet)
+					sidBytes = make([]byte, sidLen)
+					for idx := 0; idx < sidLen; idx++ {
+						b := *(*byte)(unsafe.Pointer(sidPtr + uintptr(idx)))
+						sidBytes[idx] = b
+					}
+				}
+
 				rights := maskToRights(mask)
 				ace := ACE{
-					Principal: principal,
-					Rights:    rights,
+					Principal:    principal,
+					PrincipalSID: sidBytes,
+					Rights:       rights,
 					Type: func() string {
 						if aceType == ACCESS_ALLOWED_ACE_TYPE {
 							return "allow"
