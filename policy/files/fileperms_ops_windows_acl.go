@@ -6,7 +6,6 @@ package files
 import (
 	"fmt"
 	"io/fs"
-	"os/exec"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -61,36 +60,71 @@ func (w *WindowsACLFilePermsOps) Chown(path string, owner string, group string) 
 		ownerName = "Administrators"
 	}
 
-	// Set owner
+	// Set owner via Win32 LookupAccountNameW -> SetNamedSecurityInfoW
 	if ownerName != "" {
-		cmd := exec.Command("icacls", path, "/setowner", ownerName)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("failed to set owner via icacls: %v: %s", err, string(out))
+		// LookupAccountNameW to get SID buffer size
+		procLookupAccountName := advapi32.NewProc("LookupAccountNameW")
+		pName, _ := syscall.UTF16PtrFromString(ownerName)
+		var sidSize uint32
+		var domSize uint32
+		var sidUse uint32
+		// first call to get required sizes
+		procLookupAccountName.Call(
+			0,
+			uintptr(unsafe.Pointer(pName)),
+			0,
+			uintptr(unsafe.Pointer(&sidSize)),
+			0,
+			uintptr(unsafe.Pointer(&domSize)),
+			uintptr(unsafe.Pointer(&sidUse)),
+		)
+		if sidSize == 0 {
+			return fmt.Errorf("LookupAccountNameW: could not determine SID buffer size for %s", ownerName)
+		}
+		sid := make([]byte, sidSize)
+		dom := make([]uint16, domSize)
+		ret, _, err := procLookupAccountName.Call(
+			0,
+			uintptr(unsafe.Pointer(pName)),
+			uintptr(unsafe.Pointer(&sid[0])),
+			uintptr(unsafe.Pointer(&sidSize)),
+			uintptr(unsafe.Pointer(&dom[0])),
+			uintptr(unsafe.Pointer(&domSize)),
+			uintptr(unsafe.Pointer(&sidUse)),
+		)
+		if ret == 0 {
+			return fmt.Errorf("LookupAccountNameW failed for %s: %v", ownerName, err)
+		}
+
+		// Apply owner using SetNamedSecurityInfoW
+		pPath, _ := syscall.UTF16PtrFromString(path)
+		ret2, _, err := procSetNamedSecurityInfo.Call(
+			uintptr(unsafe.Pointer(pPath)),
+			uintptr(SE_FILE_OBJECT),
+			uintptr(OWNER_SECURITY_INFORMATION),
+			uintptr(unsafe.Pointer(&sid[0])),
+			0,
+			0,
+			0,
+		)
+		if ret2 != 0 {
+			return fmt.Errorf("SetNamedSecurityInfoW (owner) failed: %v (ret=%d)", err, ret2)
 		}
 	}
 
-	// If group provided, grant read permissions to that group
+	// If group provided, grant GENERIC_READ via ApplyACE
 	if group != "" {
-		// Use /grant to add Read permission for group; use /inheritance:r to remove inherited perms if needed.
-		grant := fmt.Sprintf("%s:(R)", group)
-		cmd := exec.Command("icacls", path, "/grant", grant)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("failed to grant group permission via icacls: %v: %s", err, string(out))
+		if err := w.ApplyACE(path, ACE{Principal: group, Rights: "GENERIC_READ", Type: "allow"}); err != nil {
+			return fmt.Errorf("failed to apply group ACE: %v", err)
 		}
 	}
 
-	// Ensure Administrators and SYSTEM have full control
-	adminGrant := "Administrators:F"
-	systemGrant := "SYSTEM:F"
-	cmd := exec.Command("icacls", path, "/grant", adminGrant, "/grant", systemGrant)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		// If cmd failed but it was because grants already exist, ignore known messages; otherwise return error
-		if !strings.Contains(string(out), "Successfully processed") {
-			return fmt.Errorf("failed to ensure admin/system ACLs via icacls: %v: %s", err, string(out))
-		}
+	// Ensure Administrators and SYSTEM have full control via ApplyACE
+	if err := w.ApplyACE(path, ACE{Principal: "Administrators", Rights: "GENERIC_ALL", Type: "allow"}); err != nil {
+		return fmt.Errorf("ensure admin ACE failed: %v", err)
+	}
+	if err := w.ApplyACE(path, ACE{Principal: "SYSTEM", Rights: "GENERIC_ALL", Type: "allow"}); err != nil {
+		return fmt.Errorf("ensure system ACE failed: %v", err)
 	}
 
 	return nil
