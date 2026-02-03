@@ -951,13 +951,34 @@ function Install-OpksshServer {
         Write-Host ""
         
         # Step 7: Create configuration
-        Write-Host "[7/10] Creating configuration..." -ForegroundColor Yellow
+        Write-Host "[7/11] Creating configuration..." -ForegroundColor Yellow
         New-OpksshConfiguration -ConfigPath $ConfigPath -AuthCmdUser $AuthCmdUser | Out-Null
         Write-Host "  Configuration: $ConfigPath" -ForegroundColor Green
         Write-Host ""
         
-        # Step 8: Configure sshd
-        Write-Host "[8/10] Configuring OpenSSH Server..." -ForegroundColor Yellow
+        # Step 8: Configure permissions using opkssh
+        Write-Host "[8/11] Configuring file permissions..." -ForegroundColor Yellow
+        $permArgs = @("permissions", "install")
+        if ($Verbose) {
+            $permArgs += "-v"
+        }
+        
+        try {
+            & $binaryPath $permArgs
+            
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Permission configuration returned non-zero exit code but continuing..."
+            } else {
+                Write-Host "  Permissions configured successfully" -ForegroundColor Green
+            }
+        } catch {
+            Write-Warning "Failed to configure permissions: $($_.Exception.Message)"
+            Write-Warning "You may need to run: & '$binaryPath' permissions fix"
+        }
+        Write-Host ""
+        
+        # Step 9: Configure sshd
+        Write-Host "[9/11] Configuring OpenSSH Server..." -ForegroundColor Yellow
         $sshdConfigResult = Set-SshdConfiguration -BinaryPath $binaryPath `
                                                    -AuthCmdUser $AuthCmdUser `
                                                    -OverwriteConfig $OverwriteConfig
@@ -968,7 +989,7 @@ function Install-OpksshServer {
         Write-Host ""
         
         # Step 10: Restart sshd service
-        Write-Host "[9/10] Restarting OpenSSH Server..." -ForegroundColor Yellow
+        Write-Host "[10/11] Restarting OpenSSH Server..." -ForegroundColor Yellow
         Restart-SshdService -NoRestart $NoSshdRestart | Out-Null
         if (-not $NoSshdRestart) {
             Write-Host "  Service restarted" -ForegroundColor Green
@@ -978,7 +999,7 @@ function Install-OpksshServer {
         Write-Host ""
         
         # Step 11: Add to PATH and log
-        Write-Host "[10/10] Finalizing installation..." -ForegroundColor Yellow
+        Write-Host "[11/11] Finalizing installation..." -ForegroundColor Yellow
         Add-OpksshToPath -InstallDir $InstallDir | Out-Null
         
         $logPath = Join-Path $ConfigPath "logs\opkssh-install.log"
