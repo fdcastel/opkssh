@@ -1,11 +1,12 @@
 name: CI
 
-# Runs CI for pull requests and pushes to main
+# Runs CI for pull requests and pushes to any branch
+# This allows fork developers to get CI feedback on their branches
 on:
   pull_request:
   push:
     branches:
-      - main
+      - '**'  # Run on all branches
   # schedule:
   #   - cron: 0 14 * * MON-FRI # Every weekday at 14:00 UTC
 
