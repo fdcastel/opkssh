@@ -36,6 +36,7 @@ type AuditCmd struct {
 	Out              io.Writer
 	ErrOut           io.Writer
 	filePermsChecker files.PermsChecker
+	aclVerifier      files.ACLVerifier
 	ProviderLoader   policy.ProviderLoader
 	CurrentUsername  string
 
@@ -59,6 +60,7 @@ func NewAuditCmd(out io.Writer, errOut io.Writer) *AuditCmd {
 			Fs:        fs,
 			CmdRunner: files.ExecCmd,
 		},
+		aclVerifier: files.NewDefaultACLVerifier(fs),
 
 		ProviderPath: policy.SystemDefaultProvidersPath,
 		PolicyPath:   policy.SystemDefaultPolicyPath,
@@ -208,6 +210,20 @@ func (a *AuditCmd) auditPolicyFileWithStatus(policyPath string, requiredPerms []
 
 	if permsErr := a.filePermsChecker.CheckPerm(policyPath, requiredPerms, "", ""); permsErr != nil {
 		results.PermsError = permsErr.Error()
+	}
+
+	// Check ACLs if verifier is available (Windows-specific)
+	if a.aclVerifier != nil {
+		expectedACL := files.ExpectedACL{
+			Owner: "root",
+			Mode:  requiredPerms[0],
+		}
+		report, err := a.aclVerifier.VerifyACL(policyPath, expectedACL)
+		if err == nil && len(report.Problems) > 0 {
+			for _, problem := range report.Problems {
+				fmt.Fprintf(a.ErrOut, "  ACL issue: %s\n", problem)
+			}
+		}
 	}
 
 	// Load policy file
