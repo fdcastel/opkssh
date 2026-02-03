@@ -448,6 +448,10 @@ Exit code: 0 if all entries are valid, 1 if any warnings or errors are found.`,
 
 	rootCmd.AddCommand(clientCmd)
 
+	// permissions command for checking and fixing file permissions/ACLs
+	permissionsCmd := commands.NewPermissionsCmd()
+	rootCmd.AddCommand(permissionsCmd)
+
 	// genDocsCmd is a hidden command used as a helper for generating our
 	// command line reference documentation.
 	genDocsCmd := &cobra.Command{
