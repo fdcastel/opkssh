@@ -201,7 +201,7 @@ func TestLoad(t *testing.T) {
 			if tt.userPolicy != nil {
 				policyFile, err := tt.userPolicy.ToTable()
 				require.NoError(t, err)
-			expectedPath := filepath.Join(ValidUser.HomeDir, ".opk", "auth_id")
+				expectedPath := filepath.Join(ValidUser.HomeDir, ".opk", "auth_id")
 				err = afero.WriteFile(mockFs, expectedPath, policyFile, 0600)
 				require.NoError(t, err)
 				expectedPaths = append(expectedPaths, expectedPath)

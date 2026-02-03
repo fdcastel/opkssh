@@ -37,7 +37,7 @@ func TestAddErrors_UnixPermissions(t *testing.T) {
 	mockFs := afero.NewMemMapFs()
 	_, err := mockFs.Create(policy.SystemDefaultPolicyPath)
 	require.NoError(t, err)
-	
+
 	addCmd := MockAddCmd(mockFs)
 
 	policyPath, err := addCmd.Run(principal, userEmail, issuer)
