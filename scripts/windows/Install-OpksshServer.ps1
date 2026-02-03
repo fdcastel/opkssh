@@ -285,13 +285,18 @@ function Test-OpksshVersion {
     $minVersionString = "0.10.0"
     $minVersion = [version]$minVersionString
     
-    # Parse requested version (remove 'v' prefix if present)
-    $versionString = $Version -replace '^v', ''
+    # Parse requested version (allow optional prerelease/build suffixes)
+    $versionMatch = [regex]::Match($Version, '^v?(?<core>\d+\.\d+\.\d+)(?<suffix>[-+].+)?$')
+    if (-not $versionMatch.Success) {
+        throw "Invalid version format: $Version. Use format 'v0.10.0' or '0.10.0' (optionally with -suffix)"
+    }
+    
+    $versionString = $versionMatch.Groups['core'].Value
     
     try {
         $requestedVersion = [version]$versionString
     } catch {
-        throw "Invalid version format: $Version. Use format 'v0.10.0' or '0.10.0'"
+        throw "Invalid version format: $Version. Use format 'v0.10.0' or '0.10.0' (optionally with -suffix)"
     }
     
     if ($requestedVersion -lt $minVersion) {
