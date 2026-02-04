@@ -63,7 +63,11 @@ jobs:
     
     - name: Add GitHub provider to opkssh configuration
       run: |
-        Add-Content -Path 'C:\ProgramData\opk\providers' -Value 'https://token.actions.githubusercontent.com github oidc'
+        $providersPath = 'C:\ProgramData\opk\providers'
+        if ((Get-Content -Path $providersPath -Raw) -notmatch "`r?`n$") {
+          Add-Content -Path $providersPath -Value ''
+        }
+        Add-Content -Path $providersPath -Value 'https://token.actions.githubusercontent.com github oidc'
     
     - name: Add current repository to policy
       run: |
