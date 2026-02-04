@@ -51,10 +51,10 @@ function Write-TestResult {
     $script:TotalTests++
     
     $symbol = switch ($Result) {
-        'Pass'    { "✓"; $script:PassedTests++; $color = 'Green' }
-        'Fail'    { "✗"; $script:FailedTests++; $color = 'Red' }
-        'Warning' { "!"; $script:WarningTests++; $color = 'Yellow' }
-        'Info'    { "i"; $color = 'Cyan' }
+        'Pass'    { "PASS"; $script:PassedTests++; $color = 'Green' }
+        'Fail'    { "FAIL"; $script:FailedTests++; $color = 'Red' }
+        'Warning' { "WARN"; $script:WarningTests++; $color = 'Yellow' }
+        'Info'    { "INFO"; $color = 'Cyan' }
     }
     
     $resultText = "[$symbol] $TestName"
@@ -364,9 +364,9 @@ Write-Host "Warnings:       $script:WarningTests" -ForegroundColor Yellow
 Write-Host ""
 
 if ($script:FailedTests -eq 0) {
-    Write-Host "✓ All critical tests passed!" -ForegroundColor Green
+    Write-Host "All critical tests passed!" -ForegroundColor Green
     exit 0
 } else {
-    Write-Host "✗ Some tests failed. Please review the results above." -ForegroundColor Red
+    Write-Host "Some tests failed. Please review the results above." -ForegroundColor Red
     exit 1
 }
