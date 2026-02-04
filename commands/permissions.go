@@ -120,11 +120,11 @@ func runPermissionsCheck() error {
 	if _, err := ops.Stat(systemPolicy); err != nil {
 		problems = append(problems, fmt.Sprintf("%s: %v", systemPolicy, err))
 	} else {
-		if err := checker.CheckPerm(systemPolicy, []fs.FileMode{files.ModeSystemPerms}, "root", ""); err != nil {
+		if err := checker.CheckPerm(systemPolicy, []fs.FileMode{files.ModeSystemPerms}, expectedSystemOwner(), ""); err != nil {
 			problems = append(problems, fmt.Sprintf("%s: %v", systemPolicy, err))
 		}
 		// ACL verification: print owner and ACEs
-		report, err := aclVerifier.VerifyACL(systemPolicy, files.ExpectedACL{Owner: "root", Mode: files.ModeSystemPerms})
+		report, err := aclVerifier.VerifyACL(systemPolicy, expectedSystemACL(files.ModeSystemPerms))
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("%s: acl verify error: %v", systemPolicy, err))
 		} else {
@@ -162,7 +162,7 @@ func runPermissionsCheck() error {
 		problems = append(problems, fmt.Sprintf("%s: %v", pluginsDir, err))
 	} else {
 		// Check directory perms using plugin package expectations
-		if err := checker.CheckPerm(pluginsDir, plugins.RequiredPolicyDirPerms(), "root", ""); err != nil {
+		if err := checker.CheckPerm(pluginsDir, plugins.RequiredPolicyDirPerms(), expectedSystemOwner(), ""); err != nil {
 			problems = append(problems, fmt.Sprintf("%s: %v", pluginsDir, err))
 		}
 	}

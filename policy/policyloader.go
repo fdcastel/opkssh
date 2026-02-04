@@ -32,7 +32,7 @@ var SystemDefaultPolicyPath = filepath.Join(GetSystemConfigBasePath(), "auth_id"
 
 // SystemDefaultProvidersPath is the default filepath where opkssh provider
 // definitions are configured
-var SystemDefaultProvidersPath = filepath.FromSlash("/etc/opk/providers")
+var SystemDefaultProvidersPath = filepath.Join(GetSystemConfigBasePath(), "providers")
 
 // UserLookup defines the minimal interface to lookup users on the current
 // system
