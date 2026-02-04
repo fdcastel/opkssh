@@ -613,11 +613,12 @@ function Set-SshdConfiguration {
         [string]$AuthCmdUser,
         
         [Parameter()]
-        [bool]$OverwriteConfig = $false
+        [bool]$OverwriteConfig = $false,
+
+        [Parameter()]
+        [string]$SshdConfigPath = "C:\ProgramData\ssh\sshd_config"
     )
-    
-    $sshdConfigPath = "C:\ProgramData\ssh\sshd_config"
-    
+
     Write-Log "Configuring OpenSSH Server..."
     Write-Verbose "  sshd_config path: $sshdConfigPath"
     
@@ -625,17 +626,14 @@ function Set-SshdConfiguration {
         throw "sshd_config not found at: $sshdConfigPath"
     }
     
-    # Backup existing configuration
-    $timestamp = Get-Date -Format "yyyyMMddHHmmss"
-    $backupPath = "$sshdConfigPath.backup.$timestamp"
-    
-    if ($PSCmdlet.ShouldProcess($sshdConfigPath, "Create backup at $backupPath")) {
-        Copy-Item $sshdConfigPath $backupPath -Force
-        Write-Verbose "  Created backup: $backupPath"
-    }
-    
     # Read current configuration
     $configLines = Get-Content $sshdConfigPath
+
+    # Prepare new configuration lines
+    # Note: Windows paths with spaces must be quoted
+    $quotedBinaryPath = "`"$BinaryPath`""
+    $authKeyCmdLine = "AuthorizedKeysCommand $quotedBinaryPath verify %u %k %t"
+    $authKeyUserLine = "AuthorizedKeysCommandUser $AuthCmdUser"
     
     # Check for existing AuthorizedKeysCommand configuration
     $hasAuthKeyCmd = $configLines | Where-Object { 
@@ -645,21 +643,31 @@ function Set-SshdConfiguration {
         $_ -match '^\s*AuthorizedKeysCommandUser\s+' -and $_ -notmatch '^\s*#' 
     }
     
+    $matchesAuthKeyCmd = $hasAuthKeyCmd | Where-Object { $_.Trim() -eq $authKeyCmdLine }
+    $matchesAuthKeyUser = $hasAuthKeyUser | Where-Object { $_.Trim() -eq $authKeyUserLine }
+
+    if ($matchesAuthKeyCmd -and $matchesAuthKeyUser) {
+        Write-Log "  Existing opkssh sshd_config entries already match desired configuration" -Level Success
+        return $true
+    }
+
     if (($hasAuthKeyCmd -or $hasAuthKeyUser) -and -not $OverwriteConfig) {
         Write-Warning "Existing AuthorizedKeysCommand configuration detected:"
         $hasAuthKeyCmd | ForEach-Object { Write-Warning "  $_" }
         $hasAuthKeyUser | ForEach-Object { Write-Warning "  $_" }
         Write-Warning ""
         Write-Warning "To overwrite this configuration, run the script with -OverwriteConfig"
-        Write-Warning "Backup created at: $backupPath"
         return $false
     }
-    
-    # Prepare new configuration lines
-    # Note: Windows paths with spaces must be quoted
-    $quotedBinaryPath = "`"$BinaryPath`""
-    $authKeyCmdLine = "AuthorizedKeysCommand $quotedBinaryPath verify %u %k %t"
-    $authKeyUserLine = "AuthorizedKeysCommandUser $AuthCmdUser"
+
+    # Backup existing configuration
+    $timestamp = Get-Date -Format "yyyyMMddHHmmss"
+    $backupPath = "$sshdConfigPath.backup.$timestamp"
+
+    if ($PSCmdlet.ShouldProcess($sshdConfigPath, "Create backup at $backupPath")) {
+        Copy-Item $sshdConfigPath $backupPath -Force
+        Write-Verbose "  Created backup: $backupPath"
+    }
     
     # Process configuration
     $newConfigLines = @()
