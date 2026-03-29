@@ -1,0 +1,63 @@
+name: Pre-release
+
+on:
+  push:
+    branches:
+      - pre-release
+
+permissions: {}
+
+jobs:
+  pre-release:
+    name: Build and publish pre-release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      PRE_RELEASE_TAG: v0.14.0-win
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Configure Git for tagging
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Delete existing release and tag (if any)
+        run: |
+          gh release delete "$PRE_RELEASE_TAG" --yes --cleanup-tag --repo "$REPOSITORY" 2>/dev/null || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+
+      - name: Create local release tag
+        run: git tag -f "$PRE_RELEASE_TAG"
+
+      - name: Set up Go
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+        with:
+          go-version-file: 'go.mod'
+          cache: false
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 # v7.0.0
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish as latest release
+        run: |
+          gh release edit "$PRE_RELEASE_TAG" \
+            --draft=false \
+            --latest=true \
+            --repo "$REPOSITORY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
