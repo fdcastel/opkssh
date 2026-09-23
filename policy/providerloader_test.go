@@ -130,6 +130,27 @@ func TestProviderPolicy_CreateVerifier_DuplicateGitLabIssuer(t *testing.T) {
 	require.NotNil(t, ver)
 }
 
+func TestProviderPolicy_CreateVerifier_DuplicateGoogleIssuer(t *testing.T) {
+	// Two OAuth clients for one issuer, e.g. while migrating from one Google
+	// client ID to another.
+	rows := []ProvidersRow{
+		{Issuer: "https://accounts.google.com", ClientID: "client-a.apps.googleusercontent.com", ExpirationPolicy: "24h"},
+		{Issuer: "https://accounts.google.com", ClientID: "client-b.apps.googleusercontent.com", ExpirationPolicy: "oidc"},
+	}
+	policy := &ProviderPolicy{}
+	for _, row := range rows {
+		policy.AddRow(row)
+
+		provider := providerVerifierFromRow(row)
+		require.IsType(t, &providers.GoogleOp{}, provider)
+		require.Equal(t, row.ClientID, provider.(*providers.GoogleOp).ClientID())
+	}
+
+	ver, err := policy.CreateVerifier()
+	require.NoError(t, err)
+	require.NotNil(t, ver)
+}
+
 func TestProviderPolicy_CreateVerifier_GitLabAndGitLabCiKeepOwnExpiration(t *testing.T) {
 	// Two rows for the same issuer are passed to the library as two
 	// verifiers, each carrying its own expiration policy; openpubkey >= 0.29
@@ -243,8 +264,7 @@ func TestProviderVerifierFromRow_GitLabCiMarkerUsesNormalGitLabProvider(t *testi
 		ExpirationPolicy: "24h",
 	})
 
-	_, isGitLabCiProvider := provider.(*providers.GitlabCiOp)
-	require.False(t, isGitLabCiProvider)
+	require.IsType(t, &providers.GitlabOp{}, provider)
 	require.Equal(t, "https://gitlab.com", provider.Issuer())
 }
 
